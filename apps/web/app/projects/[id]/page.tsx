@@ -11,9 +11,11 @@ import InsightLab from "@/components/InsightLab";
 import IdeationLab from "@/components/IdeationLab";
 import TrendLab from "@/components/TrendLab";
 import DecisionLab from "@/components/DecisionLab";
+import CollectionLab from "@/components/CollectionLab";
 
 const TABS = [
   { key: "ideation", label: "Ideation Lab" },
+  { key: "collection", label: "Collection Lab" },
   { key: "signal", label: "Signal Lab" },
   { key: "insight", label: "Insight Lab" },
   { key: "trend", label: "Trend Lab" },
@@ -97,6 +99,7 @@ export default function ProjectWorkspace() {
 
       <div className="mt-6">
         {tab === "ideation" && <IdeationLab projectId={projectId} />}
+        {tab === "collection" && <CollectionLab projectId={projectId} />}
         {tab === "signal" && <SignalLab projectId={projectId} />}
         {tab === "insight" && <InsightLab projectId={projectId} />}
         {tab === "trend" && <TrendLab projectId={projectId} />}

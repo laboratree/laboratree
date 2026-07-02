@@ -214,6 +214,15 @@ export type ReportResult = {
   project: string;
 };
 
+export type SurveyQuestion = { id: string; text: string; type: string; options?: string[] };
+export type BiasFinding = { question: string; issue: string; severity: string; suggestion: string };
+export type SampleResult = {
+  sample_size: number;
+  unadjusted: number;
+  params: Record<string, unknown>;
+};
+export type PilotResult = { persona: string; n: number; respondents: Record<string, string>[] };
+
 // ---------------- endpoint helpers ----------------
 export const Api = {
   register: (email: string, password: string, full_name: string) =>
@@ -279,6 +288,19 @@ export const Api = {
 
   generateReport: (projectId: string) =>
     apiPost<ReportResult>(`/api/projects/${projectId}/report`),
+
+  designQuestionnaire: (projectId: string, body: { goal: string; audience: string; n: number }) =>
+    apiPost<{ questions: SurveyQuestion[] }>(
+      `/api/projects/${projectId}/collection/questionnaire`, body),
+  biasCheck: (projectId: string, questions: string[]) =>
+    apiPost<{ findings: BiasFinding[] }>(
+      `/api/projects/${projectId}/collection/bias-check`, { questions }),
+  sampleSize: (
+    projectId: string,
+    body: { confidence: number; margin: number; population?: number | null; proportion: number },
+  ) => apiPost<SampleResult>(`/api/projects/${projectId}/collection/sample-size`, body),
+  pilot: (projectId: string, body: { questions: string[]; persona: string; n: number }) =>
+    apiPost<PilotResult>(`/api/projects/${projectId}/collection/pilot`, body),
 
   runComponent: (
     projectId: string,
