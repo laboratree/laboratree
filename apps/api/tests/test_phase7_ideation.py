@@ -44,6 +44,22 @@ def test_run_ideation_ranks_and_reviews():
     assert result["meta_review"].startswith("Synthesis")
 
 
+def test_generation_grounds_in_evidence_context():
+    from laboratree.labs.ideation.coscientist import generate_hypotheses
+
+    seen = {}
+
+    def _cap(system, prompt, **kw):
+        seen["system"], seen["prompt"] = system, prompt
+        return '["grounded idea 1", "grounded idea 2"]'
+
+    hyps = generate_hypotheses("women literacy & development", 2, _cap,
+                               context="Summary: literacy raises income. Key variables: female_literacy_rate")
+    assert hyps and hyps[0]["origin"] == "grounded"
+    assert "female_literacy_rate" in seen["prompt"]        # the evidence reached generation
+    assert "Ground every hypothesis" in seen["system"]      # grounding instruction switched on
+
+
 def test_tournament_promotes_best():
     hyps = [
         {"id": "h0", "text": "mediocre", "elo": 1200.0},

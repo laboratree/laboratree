@@ -149,6 +149,68 @@ async def run(
     return record
 
 
+def _evidence_context(brief: dict[str, Any]) -> str:
+    """Condense an evidence brief into a grounding prompt for the Co-Scientist generation agent."""
+    parts = [str(brief.get("summary") or "")]
+    vs = brief.get("variables_to_test") or []
+    if vs:
+        parts.append("Key measurable variables: " + ", ".join(
+            (v.get("name", "") if isinstance(v, dict) else str(v)) for v in vs[:12]))
+    kf = brief.get("key_findings") or []
+    if kf:
+        parts.append("Findings: " + "; ".join(
+            (f.get("finding", "") if isinstance(f, dict) else str(f)) for f in kf[:5]))
+    gaps = brief.get("gaps") or []
+    if gaps:
+        parts.append("Open gaps to target: " + "; ".join(str(g) for g in gaps[:4]))
+    return "\n".join(p for p in parts if p)
+
+
+@router.post("/projects/{project_id}/ideation/grounded", status_code=201)
+async def grounded_ideation(
+    project_id: uuid.UUID, body: IdeationIn, principal: PrincipalDep, session: SessionDep
+) -> dict[str, Any]:
+    """The unified Co-Scientist: FIRST hunt the evidence for the goal, THEN generate + tournament
+    hypotheses GROUNDED in that real evidence (not blind priors) — tying Evidence Hunt into the
+    Co-Scientist. Returns the ranked session plus the evidence brief it was grounded in."""
+    import asyncio
+
+    await _require_project(session, principal, project_id)
+    if not search_available():
+        raise HTTPException(
+            status_code=503,
+            detail="web search is not configured — set BRAVE_SEARCH_API_KEY or SERPAPI_KEY in .env",
+        )
+
+    def _run() -> tuple[dict[str, Any], dict[str, Any]]:
+        with use_llm_context("ideation", "grounded", project_id=project_id, org_id=principal.org_id):
+            ev = gather_evidence(
+                body.goal, search_fn=web_search, complete_fn=ideation_llm.default_complete,
+                max_sources=8,
+            )
+            context = _evidence_context(ev["brief"])
+            result = run_ideation(
+                body.goal, ideation_llm.default_complete,
+                n=body.n, evolve_n=body.evolve_n, context=context,
+            )
+            return ev, result
+
+    ev, result = await asyncio.to_thread(_run)
+    record = IdeationSession(
+        org_id=principal.org_id, project_id=project_id, goal=body.goal,
+        status=IdeationStatus.COMPLETE, hypotheses=result["hypotheses"],
+        meta_review=result["meta_review"],
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return {
+        "id": str(record.id), "goal": record.goal, "status": record.status.value,
+        "hypotheses": record.hypotheses, "meta_review": record.meta_review,
+        "created_at": record.created_at.isoformat(), "evidence": ev,
+    }
+
+
 @router.get("/projects/{project_id}/ideation", response_model=list[SessionOut])
 async def list_sessions(
     project_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
