@@ -222,3 +222,62 @@ def gather_evidence(
     sources = _collect_sources(queries, search_fn, max_sources)
     brief = synthesize(hypothesis, sources, complete_fn)
     return {"hypothesis": hypothesis, "queries": queries, "sources": sources, "brief": brief}
+
+
+MAX_HISTORY_TURNS = 8
+
+
+def _brief_context(brief: dict[str, Any]) -> str:
+    """Compact, plain-text rendering of the brief so the brainstorm partner stays grounded in it."""
+    lines = [f"Summary: {brief.get('summary', '')}", f"Stance: {brief.get('stance', 'inconclusive')}"]
+    kf = brief.get("key_findings") or []
+    if kf:
+        lines.append("Key findings: " + "; ".join(
+            f.get("finding", "") if isinstance(f, dict) else str(f) for f in kf
+        ))
+    vs = brief.get("variables_to_test") or []
+    if vs:
+        lines.append("Variables to test: " + ", ".join(
+            f"{v.get('name', '')} ({v.get('role', '')})" if isinstance(v, dict) else str(v) for v in vs
+        ))
+    gaps = brief.get("gaps") or []
+    if gaps:
+        lines.append("Gaps: " + "; ".join(str(g) for g in gaps))
+    return "\n".join(lines)
+
+
+def brainstorm(
+    hypothesis: str,
+    brief: dict[str, Any],
+    sources: list[dict[str, Any]],
+    question: str,
+    history: list[dict[str, str]] | None,
+    complete_fn: CompleteFn,
+) -> dict[str, Any]:
+    """Grounded brainstorming turn: answer a follow-up about the hypothesis using the evidence brief
+    + sources as context. Honest about uncertainty; suggests study designs, confounders, and the data
+    to gather next. Cites sources by [n]. Stateless — the client passes the brief/sources/history."""
+    system = (
+        "You are a sharp, honest research brainstorming partner. Ground every claim in the evidence "
+        "brief and the numbered sources provided; when you use a source, cite it like [2]. Be candid "
+        "about uncertainty and confounders, and push the thinking forward with concrete next steps — "
+        "study designs, variables/controls to measure, datasets to gather, and threats to validity. "
+        "Keep replies focused and conversational (a few short paragraphs, not an essay)."
+    )
+    convo = ""
+    for turn in (history or [])[-MAX_HISTORY_TURNS:]:
+        who = "Researcher" if turn.get("role") == "user" else "You"
+        convo += f"{who}: {turn.get('content', '')}\n"
+    prompt = (
+        f"Hypothesis: {hypothesis}\n\n"
+        f"Evidence brief:\n{_brief_context(brief)}\n\n"
+        f"Sources:\n{_sources_block(sources)}\n\n"
+        f"{('Conversation so far:' + chr(10) + convo + chr(10)) if convo else ''}"
+        f"Researcher: {question}\nYou:"
+    )
+    try:
+        answer = complete_fn(system, prompt).strip()
+    except Exception as exc:
+        log.info("brainstorm failed: %s", exc)
+        answer = ""
+    return {"answer": answer or "I couldn't generate a response just now — try rephrasing."}

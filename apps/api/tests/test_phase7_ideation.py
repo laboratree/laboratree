@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from laboratree.core.search import SearchHit
 from laboratree.labs.ideation.coscientist import run_ideation, tournament
-from laboratree.labs.ideation.evidence import gather_evidence, plan_queries
+from laboratree.labs.ideation.evidence import brainstorm, gather_evidence, plan_queries
 from laboratree.main import app
 
 
@@ -123,3 +123,35 @@ def test_gather_evidence_handles_no_sources():
     )
     assert out["sources"] == []
     assert out["brief"]["stance"] == "inconclusive"
+
+
+def test_brainstorm_is_grounded_in_brief_and_sources():
+    captured = {}
+
+    def _complete(system, prompt, **kw):
+        captured["system"] = system
+        captured["prompt"] = prompt
+        return "Consider controlling for household income [1]. Gather district-level literacy data."
+
+    out = brainstorm(
+        hypothesis="female literacy -> rural development",
+        brief={"summary": "positive link", "stance": "mixed",
+               "variables_to_test": [{"name": "female_literacy_rate", "role": "independent"}]},
+        sources=[{"title": "Study A", "url": "https://example.org/a", "snippet": "..."}],
+        question="What confounders should I control for?",
+        history=[{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}],
+        complete_fn=_complete,
+    )
+    assert "income" in out["answer"]
+    # grounded: the brief + the source + the question all reach the model
+    assert "female_literacy_rate" in captured["prompt"]
+    assert "https://example.org/a" in captured["prompt"]
+    assert "confounders" in captured["prompt"]
+
+
+def test_brainstorm_degrades_on_llm_error():
+    def _boom(system, prompt, **kw):
+        raise RuntimeError("llm down")
+
+    out = brainstorm("h", {}, [], "q?", [], _boom)
+    assert out["answer"]  # non-empty fallback, never raises

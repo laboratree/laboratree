@@ -272,6 +272,20 @@ export type TreeNode = {
   right?: TreeNode;
 };
 export type PathStep = { feature: string; value: number; threshold: number; go: string };
+/** One candidate cut-point tried while choosing the tree's root split. */
+export type SplitCandidate = { t: number; impurity: number; gain: number; n_left: number; n_right: number };
+export type SplitScanFeature = {
+  feature: string;
+  candidates: SplitCandidate[];
+  best_t: number;
+  best_gain: number;
+};
+/** Root-split threshold scan — how the tree auditioned cut-points for its first question. */
+export type SplitScan = {
+  parent_impurity: number;
+  features: SplitScanFeature[]; // chosen feature first, then the best runners-up
+  chosen_feature: string;
+};
 export type TestRow = {
   values: Record<string, number>;
   predicted: number | string;
@@ -305,6 +319,7 @@ export type ModelTrace = {
   tree?: TreeNode | null;
   baseline?: number | null;
   rounds?: { tree: TreeNode }[] | null; // boosting ensemble: one small tree per round
+  scan?: SplitScan | null; // trees — animated "how a split is chosen" threshold scan
   intercept?: number | null;
   coef?: { feature: string; weight: number }[] | null;
   samples?: LinearSample[] | null;
@@ -440,6 +455,7 @@ export type EvidenceResult = {
   sources: EvidenceSource[];
   brief: EvidenceBrief;
 };
+export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 export type Trust = {
   score: number;
@@ -600,6 +616,16 @@ export const Api = {
       hypothesis,
       max_sources: maxSources,
     }),
+  brainstorm: (
+    projectId: string,
+    payload: {
+      hypothesis: string;
+      brief: EvidenceBrief;
+      sources: EvidenceSource[];
+      question: string;
+      history: ChatTurn[];
+    },
+  ) => apiPost<{ answer: string }>(`/api/projects/${projectId}/ideation/brainstorm`, payload),
 
   generateReport: (projectId: string) =>
     apiPost<ReportResult>(`/api/projects/${projectId}/report`),

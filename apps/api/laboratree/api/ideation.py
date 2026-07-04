@@ -15,7 +15,7 @@ from ..core.llm.context import use_llm_context
 from ..core.search import search_available, web_search
 from ..labs.ideation import llm as ideation_llm
 from ..labs.ideation.coscientist import run_ideation
-from ..labs.ideation.evidence import gather_evidence
+from ..labs.ideation.evidence import brainstorm, gather_evidence
 from ..projects.models import IdeationSession, IdeationStatus, Project
 
 router = APIRouter(prefix="/api", tags=["ideation"])
@@ -30,6 +30,14 @@ class IdeationIn(BaseModel):
 class EvidenceIn(BaseModel):
     hypothesis: str = Field(min_length=8)
     max_sources: int = Field(default=12, ge=4, le=20)
+
+
+class BrainstormIn(BaseModel):
+    hypothesis: str
+    brief: dict[str, Any] = {}
+    sources: list[dict[str, Any]] = []
+    question: str = Field(min_length=1)
+    history: list[dict[str, str]] = []
 
 
 class SessionOut(BaseModel):
@@ -122,6 +130,26 @@ async def evidence_hunt(
                 search_fn=web_search,
                 complete_fn=ideation_llm.default_complete,
                 max_sources=body.max_sources,
+            )
+
+    return await asyncio.to_thread(_run)
+
+
+@router.post("/projects/{project_id}/ideation/brainstorm")
+async def brainstorm_chat(
+    project_id: uuid.UUID, body: BrainstormIn, principal: PrincipalDep, session: SessionDep
+) -> dict[str, Any]:
+    """Brainstorm a hypothesis with the agent, grounded in an evidence brief + its sources. Stateless:
+    the client passes the brief/sources/history back so no session state is needed."""
+    import asyncio
+
+    await _require_project(session, principal, project_id)
+
+    def _run() -> dict[str, Any]:
+        with use_llm_context("ideation", "brainstorm", project_id=project_id, org_id=principal.org_id):
+            return brainstorm(
+                body.hypothesis, body.brief, body.sources, body.question, body.history,
+                ideation_llm.default_complete,
             )
 
     return await asyncio.to_thread(_run)

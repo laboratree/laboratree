@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Api, type EvidenceResult, type IdeationSession } from "@/lib/api";
+import { Api, type ChatTurn, type EvidenceResult, type IdeationSession } from "@/lib/api";
 
 export default function IdeationLab({ projectId }: { projectId: string }) {
   const [goal, setGoal] = useState("");
@@ -157,7 +157,7 @@ function EvidenceHunt({ projectId }: { projectId: string }) {
         </button>
       </form>
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-      {result && <EvidenceBriefView result={result} />}
+      {result && <EvidenceBriefView projectId={projectId} result={result} />}
     </div>
   );
 }
@@ -191,12 +191,20 @@ function InlineEvidence({ projectId, hypothesis }: { projectId: string; hypothes
         </button>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-      {result && <EvidenceBriefView result={result} compact />}
+      {result && <EvidenceBriefView projectId={projectId} result={result} compact />}
     </div>
   );
 }
 
-function EvidenceBriefView({ result, compact }: { result: EvidenceResult; compact?: boolean }) {
+function EvidenceBriefView({
+  projectId,
+  result,
+  compact,
+}: {
+  projectId: string;
+  result: EvidenceResult;
+  compact?: boolean;
+}) {
   const { brief, sources } = result;
   const stance = STANCE_STYLE[brief.stance] ?? STANCE_STYLE.inconclusive;
   // turn [n] citations into clickable references to the sources list
@@ -327,6 +335,91 @@ function EvidenceBriefView({ result, compact }: { result: EvidenceResult; compac
             ))}
           </ol>
         </details>
+      )}
+
+      <BrainstormChat projectId={projectId} result={result} />
+    </div>
+  );
+}
+
+function BrainstormChat({ projectId, result }: { projectId: string; result: EvidenceResult }) {
+  const [open, setOpen] = useState(false);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    const q = input.trim();
+    if (!q || busy) return;
+    const history = turns;
+    setTurns((t) => [...t, { role: "user", content: q }]);
+    setInput("");
+    setBusy(true);
+    try {
+      const { answer } = await Api.brainstorm(projectId, {
+        hypothesis: result.hypothesis,
+        brief: result.brief,
+        sources: result.sources,
+        question: q,
+        history,
+      });
+      setTurns((t) => [...t, { role: "assistant", content: answer }]);
+    } catch (err) {
+      setTurns((t) => [
+        ...t,
+        { role: "assistant", content: err instanceof Error ? `⚠ ${err.message}` : "⚠ failed" },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-line pt-3">
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-forest hover:bg-bg"
+        >
+          💬 Brainstorm with the evidence
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-forest">
+            Brainstorm — grounded in this brief
+          </p>
+          {turns.length > 0 && (
+            <div className="max-h-72 space-y-2 overflow-auto rounded-lg border border-line bg-white p-2">
+              {turns.map((t, i) => (
+                <div
+                  key={i}
+                  className={`text-sm ${t.role === "user" ? "text-ink" : "text-forest"}`}
+                >
+                  <span className="mr-1 text-xs font-semibold text-muted">
+                    {t.role === "user" ? "You" : "Agent"}
+                  </span>
+                  <p className="whitespace-pre-wrap">{t.content}</p>
+                </div>
+              ))}
+              {busy && <p className="text-xs text-muted">thinking…</p>}
+            </div>
+          )}
+          <form onSubmit={send} className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-line px-3 py-1.5 text-sm outline-none focus:border-leaf"
+              placeholder="e.g. What confounders should I control for? What data would settle this?"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+            />
+            <button
+              disabled={busy || !input.trim()}
+              className="rounded-lg bg-forest px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? "…" : "Ask"}
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );
