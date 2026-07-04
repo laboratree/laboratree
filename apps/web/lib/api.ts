@@ -413,6 +413,34 @@ export type IdeationSession = {
   created_at: string;
 };
 
+export type EvidenceSource = {
+  title: string;
+  url: string;
+  snippet: string;
+  provider?: string;
+  query?: string;
+};
+export type TestVariable = {
+  name: string;
+  role: "independent" | "target" | "control" | string;
+  rationale?: string;
+};
+export type EvidenceBrief = {
+  summary: string;
+  stance: "supports" | "refutes" | "mixed" | "inconclusive" | string;
+  confidence?: number;
+  key_findings: { finding: string; sources?: number[] }[];
+  insights: string[];
+  variables_to_test: TestVariable[];
+  gaps: string[];
+};
+export type EvidenceResult = {
+  hypothesis: string;
+  queries: string[];
+  sources: EvidenceSource[];
+  brief: EvidenceBrief;
+};
+
 export type Trust = {
   score: number;
   reproducibility: number;
@@ -567,6 +595,11 @@ export const Api = {
     apiPost<IdeationSession>(`/api/projects/${projectId}/ideation`, body),
   listIdeation: (projectId: string) =>
     apiGet<IdeationSession[]>(`/api/projects/${projectId}/ideation`),
+  evidenceHunt: (projectId: string, hypothesis: string, maxSources = 12) =>
+    apiPost<EvidenceResult>(`/api/projects/${projectId}/ideation/evidence`, {
+      hypothesis,
+      max_sources: maxSources,
+    }),
 
   generateReport: (projectId: string) =>
     apiPost<ReportResult>(`/api/projects/${projectId}/report`),
