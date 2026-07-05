@@ -1,12 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Api, type IdeationSession } from "@/lib/api";
+import {
+  Api,
+  type AutoExperimentResult,
+  type ChatTurn,
+  type DataHuntResult,
+  type EvidenceResult,
+  type EvidenceSource,
+  type IdeationSession,
+  type MasterDatasetResult,
+  type OaSource,
+} from "@/lib/api";
 
 export default function IdeationLab({ projectId }: { projectId: string }) {
   const [goal, setGoal] = useState("");
   const [n, setN] = useState(4);
+  const [grounded, setGrounded] = useState(true);
   const [session, setSession] = useState<IdeationSession | null>(null);
+  const [evidence, setEvidence] = useState<EvidenceResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,8 +27,15 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
     if (goal.trim().length < 4) return;
     setBusy(true);
     setError(null);
+    setEvidence(null);
     try {
-      setSession(await Api.runIdeation(projectId, { goal: goal.trim(), n, evolve_n: 2 }));
+      if (grounded) {
+        const r = await Api.groundedIdeation(projectId, { goal: goal.trim(), n, evolve_n: 2 });
+        setSession(r);
+        setEvidence(r.evidence);
+      } else {
+        setSession(await Api.runIdeation(projectId, { goal: goal.trim(), n, evolve_n: 2 }));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed");
     } finally {
@@ -29,8 +48,10 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
       <div className="rounded-2xl border border-line bg-white p-5">
         <h2 className="font-display text-xl text-forest">Co-Scientist</h2>
         <p className="mt-1 text-sm text-muted">
-          State a research goal. Agents generate hypotheses, debate them in an Elo tournament,
-          evolve the strongest, and synthesize a direction.
+          State a research goal or hypothesis. With <b>Ground in evidence</b> on, the agent first
+          hunts real papers &amp; studies, then generates and Elo-ranks hypotheses grounded in that
+          evidence. Open any hypothesis to gather more evidence, find datasets, build a master
+          dataset, run an auto-experiment, or pull the papers into the Paper Lab.
         </p>
         <form onSubmit={run} className="mt-4 space-y-3">
           <textarea
@@ -55,11 +76,24 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
                 ))}
               </select>
             </label>
+            <label className="flex items-center gap-1.5 text-muted" title="First hunt the evidence on the web, then generate hypotheses grounded in it">
+              <input
+                type="checkbox"
+                checked={grounded}
+                onChange={(e) => setGrounded(e.target.checked)}
+                className="accent-leaf"
+              />
+              Ground in evidence
+            </label>
             <button
               disabled={busy}
               className="rounded-lg bg-leaf px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
             >
-              {busy ? "Running tournament…" : "Run Co-Scientist"}
+              {busy
+                ? grounded
+                  ? "Hunting evidence + tournament…"
+                  : "Running tournament…"
+                : "Run Co-Scientist"}
             </button>
           </div>
         </form>
@@ -68,6 +102,15 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
 
       {session && (
         <>
+          {evidence && (
+            <div className="rounded-2xl border border-line bg-white p-5">
+              <h3 className="font-display text-lg text-forest">
+                Evidence the hypotheses were grounded in
+              </h3>
+              <EvidenceBriefView projectId={projectId} result={evidence} />
+            </div>
+          )}
+
           <div className="rounded-2xl border border-line bg-leaf/10 p-5">
             <h3 className="font-display text-lg text-forest">Research direction</h3>
             <p className="mt-2 text-sm text-ink">{session.meta_review}</p>
@@ -83,6 +126,7 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
                   <div className="flex-1">
                     <p className="text-ink">{h.text}</p>
                     {h.critique && <p className="mt-1 text-xs text-muted">{h.critique}</p>}
+                    <InlineEvidence projectId={projectId} hypothesis={h.text} />
                   </div>
                   <div className="text-right text-xs">
                     <div className="text-muted">Elo {Math.round(h.elo)}</div>
@@ -91,12 +135,776 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
                         evolved
                       </span>
                     )}
+                    {h.origin === "grounded" && (
+                      <span className="mt-1 inline-block rounded-full bg-leaf/20 px-2 py-0.5 text-forest">
+                        evidence-grounded
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Evidence Hunt ---------------- */
+
+const STANCE_STYLE: Record<string, { bg: string; label: string }> = {
+  supports: { bg: "bg-green-100 text-green-800", label: "supports" },
+  refutes: { bg: "bg-red-100 text-red-700", label: "refutes" },
+  mixed: { bg: "bg-amber-100 text-amber-800", label: "mixed evidence" },
+  inconclusive: { bg: "bg-bg text-muted", label: "inconclusive" },
+};
+
+
+function InlineEvidence({ projectId, hypothesis }: { projectId: string; hypothesis: string }) {
+  const [result, setResult] = useState<EvidenceResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await Api.evidenceHunt(projectId, hypothesis));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "evidence hunt failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      {!result && (
+        <button
+          onClick={run}
+          disabled={busy}
+          className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-forest hover:bg-bg disabled:opacity-50"
+        >
+          {busy ? "Searching…" : "🔍 Gather evidence"}
+        </button>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {result && <EvidenceBriefView projectId={projectId} result={result} compact />}
+    </div>
+  );
+}
+
+function EvidenceBriefView({
+  projectId,
+  result,
+  compact,
+}: {
+  projectId: string;
+  result: EvidenceResult;
+  compact?: boolean;
+}) {
+  const { brief, sources } = result;
+  const stance = STANCE_STYLE[brief.stance] ?? STANCE_STYLE.inconclusive;
+  // turn [n] citations into clickable references to the sources list
+  const cite = (text: string) =>
+    text.split(/(\[\d+\])/g).map((part, i) => {
+      const m = part.match(/^\[(\d+)\]$/);
+      if (!m) return <span key={i}>{part}</span>;
+      const idx = Number(m[1]) - 1;
+      const src = sources[idx];
+      return (
+        <a
+          key={i}
+          href={src?.url}
+          target="_blank"
+          rel="noreferrer"
+          title={src?.title}
+          className="align-super text-[10px] font-semibold text-leaf hover:underline"
+        >
+          [{m[1]}]
+        </a>
+      );
+    });
+
+  return (
+    <div className={`${compact ? "mt-2" : "mt-4"} space-y-3 rounded-xl border border-line bg-bg/60 p-4`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${stance.bg}`}>
+          {stance.label}
+        </span>
+        {typeof brief.confidence === "number" && (
+          <span className="text-xs text-muted">confidence {Math.round(brief.confidence * 100)}%</span>
+        )}
+        <span className="text-xs text-muted">· {sources.length} sources</span>
+      </div>
+
+      <p className="text-sm leading-relaxed text-ink">{cite(brief.summary)}</p>
+
+      {brief.key_findings?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-forest">Key findings</p>
+          <ul className="mt-1 space-y-1 text-sm text-ink">
+            {brief.key_findings.map((f, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="text-leaf">•</span>
+                <span>
+                  {f.finding}{" "}
+                  {(f.sources ?? []).map((n) => {
+                    const src = sources[n - 1];
+                    return (
+                      <a
+                        key={n}
+                        href={src?.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={src?.title}
+                        className="align-super text-[10px] font-semibold text-leaf hover:underline"
+                      >
+                        [{n}]
+                      </a>
+                    );
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {brief.variables_to_test?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-forest">
+            Variables to test next{" "}
+            <span className="font-normal text-muted">
+              ({brief.variables_to_test.length} — grounded in the studies + standard controls)
+            </span>
+          </p>
+          <div className="mt-1 overflow-hidden rounded-lg border border-line">
+            <table className="w-full text-xs">
+              <thead className="bg-bg text-muted">
+                <tr>
+                  <th className="px-2 py-1 text-left font-medium">Variable</th>
+                  <th className="px-2 py-1 text-left font-medium">Role</th>
+                  <th className="px-2 py-1 text-left font-medium">Measure</th>
+                  <th className="px-2 py-1 text-left font-medium">Dir.</th>
+                  <th className="px-2 py-1 text-left font-medium">Src</th>
+                </tr>
+              </thead>
+              <tbody>
+                {brief.variables_to_test.map((v, i) => (
+                  <tr key={i} className="border-t border-line/60" title={v.rationale}>
+                    <td className="px-2 py-1 font-medium text-forest">{v.name}</td>
+                    <td className="px-2 py-1 text-muted">{v.role}</td>
+                    <td className="px-2 py-1 text-ink">{v.measure || "—"}</td>
+                    <td className="px-2 py-1">
+                      {v.expected_direction === "positive"
+                        ? "↑"
+                        : v.expected_direction === "negative"
+                          ? "↓"
+                          : v.expected_direction === "none"
+                            ? "0"
+                            : "?"}
+                    </td>
+                    <td className="px-2 py-1 text-leaf">
+                      {(v.source_refs ?? []).map((n, j) => {
+                        const src = sources[n - 1];
+                        return (
+                          <a
+                            key={j}
+                            href={src?.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={src?.title}
+                            className="mr-0.5 hover:underline"
+                          >
+                            [{n}]
+                          </a>
+                        );
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {brief.insights?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-forest">Insights</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-ink">
+            {brief.insights.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {brief.gaps?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Gaps &amp; caveats</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted">
+            {brief.gaps.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sources.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer font-semibold text-forest">Sources ({sources.length})</summary>
+          <ol className="mt-2 space-y-1">
+            {sources.map((s, i) => (
+              <li key={s.url} className="flex gap-1.5">
+                <span className="text-muted">[{i + 1}]</span>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate text-leaf hover:underline"
+                  title={s.title}
+                >
+                  {s.title || s.url}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+
+      {sources.length > 0 && <PushToPaperLab projectId={projectId} sources={sources} />}
+
+      <DataHunt projectId={projectId} result={result} />
+      <BrainstormChat projectId={projectId} result={result} />
+    </div>
+  );
+}
+
+function DataHunt({ projectId, result }: { projectId: string; result: EvidenceResult }) {
+  const [data, setData] = useState<DataHuntResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const variables = result.brief.variables_to_test?.map((v) => v.name) ?? [];
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      setData(await Api.dataHunt(projectId, result.hypothesis, variables));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "data hunt failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-line pt-3">
+      {!data ? (
+        <button
+          onClick={run}
+          disabled={busy}
+          className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-forest hover:bg-bg disabled:opacity-50"
+        >
+          {busy ? "Searching for datasets…" : "🔎 Find data to test this"}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-forest">
+            Candidate datasets ({data.candidates.length})
+          </p>
+          {data.candidates.length === 0 ? (
+            <p className="text-xs text-muted">
+              No clear downloadable datasets surfaced. Try refining the variables, or search a
+              statistics portal (World Bank, data.gov) directly.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {data.candidates.map((c) => (
+                <li key={c.url} className="rounded-lg border border-line bg-white p-2 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-forest hover:underline"
+                    >
+                      {c.title}
+                    </a>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {c.direct_download && (
+                        <span className="rounded-full bg-leaf/20 px-1.5 text-[10px] text-forest">
+                          direct download
+                        </span>
+                      )}
+                      <span className="rounded-full bg-bg px-1.5 text-[10px] text-muted">
+                        {Math.round(c.relevance * 100)}% match
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted">{c.source}</p>
+                  {c.why_relevant && <p className="mt-1 text-xs text-ink">{c.why_relevant}</p>}
+                  {c.variables_covered.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {c.variables_covered.map((v, i) => (
+                        <span
+                          key={i}
+                          className="rounded bg-sprout/30 px-1.5 py-0.5 text-[10px] text-forest"
+                        >
+                          {v}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setData(null)}
+              className="text-xs text-muted hover:text-forest"
+            >
+              ↺ search again
+            </button>
+          </div>
+
+          {data.candidates.length > 0 && (
+            <BuildAndExperiment
+              projectId={projectId}
+              candidates={data.candidates}
+              hypothesis={result.hypothesis}
+            />
+          )}
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/* ---- push the open-access sources into the Paper Lab ---- */
+
+function PushToPaperLab({
+  projectId,
+  sources,
+}: {
+  projectId: string;
+  sources: EvidenceSource[];
+}) {
+  const [oa, setOa] = useState<OaSource[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // per-paper import state: url → "importing" | "done" | error string
+  const [imp, setImp] = useState<Record<string, string>>({});
+
+  async function findDownloadable() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await Api.resolveOa(projectId, sources);
+      setOa(r.sources);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "lookup failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendOne(s: OaSource) {
+    setImp((m) => ({ ...m, [s.url]: "importing" }));
+    try {
+      const r = await Api.pushToPaperLab(projectId, [{ title: s.title, url: s.url }]);
+      setImp((m) => ({
+        ...m,
+        [s.url]: r.imported.length ? "done" : r.skipped[0]?.reason || "failed",
+      }));
+    } catch (err) {
+      setImp((m) => ({ ...m, [s.url]: err instanceof Error ? err.message : "failed" }));
+    }
+  }
+
+  const downloadable = oa?.filter((s) => s.pdf_url) ?? [];
+
+  return (
+    <div className="border-t border-line pt-3">
+      {!oa ? (
+        <button
+          onClick={findDownloadable}
+          disabled={busy}
+          className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-forest hover:bg-bg disabled:opacity-50"
+        >
+          {busy ? "Checking which papers are free…" : "📄 Find downloadable papers"}
+        </button>
+      ) : (
+        <div className="space-y-1.5 text-xs">
+          <p className="font-semibold text-forest">
+            {downloadable.length} of {oa.length} sources have a free full-text PDF — you choose what to do
+            with each:
+          </p>
+          <ul className="space-y-1">
+            {oa.map((s) => {
+              const st = imp[s.url];
+              return (
+                <li key={s.url} className="rounded-lg border border-line bg-white p-2">
+                  <p className="truncate font-medium text-forest" title={s.title}>
+                    {s.title}
+                  </p>
+                  {s.pdf_url ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <a
+                        href={s.pdf_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded border border-line px-2 py-0.5 text-forest hover:bg-bg"
+                      >
+                        ⬇ Download PDF
+                      </a>
+                      {st === "done" ? (
+                        <span className="text-green-700">✓ in Paper Lab</span>
+                      ) : (
+                        <button
+                          onClick={() => sendOne(s)}
+                          disabled={st === "importing"}
+                          className="rounded bg-forest px-2 py-0.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                          {st === "importing" ? "Sending…" : "→ Send to Paper Lab"}
+                        </button>
+                      )}
+                      {st && st !== "done" && st !== "importing" && (
+                        <span className="text-red-600">{st}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-0.5 text-muted">
+                      No free PDF (paywalled) —{" "}
+                      <a href={s.url} target="_blank" rel="noreferrer" className="text-leaf hover:underline">
+                        open the page ↗
+                      </a>
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-[10px] text-muted">
+            Downloads open in a new tab. Sending imports the paper so you can card + chat with it in the
+            Paper tab.
+          </p>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/* ---- web data -> master dataset -> auto-experiment (the deep-agent tail) ---- */
+
+function BuildAndExperiment({
+  projectId,
+  candidates,
+  hypothesis,
+}: {
+  projectId: string;
+  candidates: DataHuntResult["candidates"];
+  hypothesis: string;
+}) {
+  const [master, setMaster] = useState<MasterDatasetResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function build() {
+    setBusy(true);
+    setError(null);
+    try {
+      setMaster(await Api.buildDataset(projectId, candidates));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "build failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-leaf/40 bg-leaf/5 p-2">
+      {!master ? (
+        <>
+          <button
+            onClick={build}
+            disabled={busy}
+            className="rounded-lg bg-forest px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Downloading & consolidating…" : "🧱 Build master dataset from these"}
+          </button>
+          <p className="mt-1 text-[10px] text-muted">
+            Downloads the direct-download sources and consolidates schema-compatible ones into one
+            table (kept honest — no fabricated joins).
+          </p>
+        </>
+      ) : (
+        <div className="space-y-1.5 text-xs">
+          <p className="font-semibold text-forest">
+            ✓ {master.name} — {master.n_rows} rows × {master.n_cols} cols
+          </p>
+          <p className="text-[11px] text-muted">{master.note}</p>
+          <details className="text-[11px]">
+            <summary className="cursor-pointer text-forest">
+              Sources ({master.tables.length})
+            </summary>
+            <ul className="mt-1 space-y-0.5">
+              {master.tables.map((t, i) => (
+                <li key={i} className="text-muted">
+                  {t.status === "ok" ? "✓" : "✗"} {t.name}
+                  {t.n_rows != null ? ` — ${t.n_rows}×${t.n_cols}` : ` (${t.status})`}
+                  {t.in_master ? " · in master" : ""}
+                </li>
+              ))}
+            </ul>
+          </details>
+          <AutoExperimentPanel
+            projectId={projectId}
+            datasetId={master.dataset_id}
+            columns={master.columns}
+            hypothesis={hypothesis}
+          />
+        </div>
+      )}
+      {error && <p className="mt-1 text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function AutoExperimentPanel({
+  projectId,
+  datasetId,
+  columns,
+  hypothesis,
+}: {
+  projectId: string;
+  datasetId: string;
+  columns: string[];
+  hypothesis: string;
+}) {
+  const [target, setTarget] = useState(columns[columns.length - 1] ?? "");
+  const [res, setRes] = useState<AutoExperimentResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      setRes(await Api.autoExperiment(projectId, datasetId, target, hypothesis));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "auto-experiment failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 border-t border-leaf/30 pt-2">
+      <div className="flex items-center gap-2">
+        <label className="text-[11px] text-muted">Target</label>
+        <select
+          className="rounded border border-line px-1.5 py-0.5 text-[11px]"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+        >
+          {columns.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={run}
+          disabled={busy || !target}
+          className="rounded-lg bg-leaf px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {busy ? "Running the pipeline…" : "🧪 Run auto-experiment"}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-[11px] text-red-600">{error}</p>}
+      {res && <AutoExperimentResultView res={res} />}
+    </div>
+  );
+}
+
+function AutoExperimentResultView({ res }: { res: AutoExperimentResult }) {
+  const stepIcon: Record<string, string> = {
+    eda: "📊",
+    leakage: "🛡",
+    preprocess: "🧹",
+    model: "🤖",
+    red_team: "⚔",
+  };
+  return (
+    <div className="mt-2 space-y-2 rounded-lg bg-white p-2">
+      <p className="text-[11px] text-muted">
+        Task: <b className="text-forest">{res.task}</b> · pipeline ran{" "}
+        {res.pipeline.filter((s) => !s.error).length} Evidence-locked steps
+      </p>
+
+      {/* pipeline steps */}
+      <div className="flex flex-wrap gap-1">
+        {res.pipeline.map((s, i) => (
+          <span
+            key={i}
+            title={s.error ?? JSON.stringify(s.outputs ?? {})}
+            className={`rounded px-1.5 py-0.5 text-[10px] ${
+              s.error ? "bg-red-50 text-red-600" : "bg-bg text-forest"
+            }`}
+          >
+            {stepIcon[s.step] ?? "•"} {s.step}
+            {s.step === "model" ? ` (${s.component.split(".").pop()})` : ""}
+          </span>
+        ))}
+      </div>
+
+      {/* leaderboard */}
+      <table className="w-full text-[11px]">
+        <tbody>
+          {res.results
+            .filter((r) => r.metrics && Object.keys(r.metrics).length)
+            .map((r, i) => (
+              <tr key={i} className={i === 0 ? "font-semibold text-forest" : "text-ink"}>
+                <td className="py-0.5">
+                  {i === 0 ? "🏆 " : ""}
+                  {r.component.split(".").pop()}
+                </td>
+                <td className="py-0.5 text-right text-muted">
+                  {Object.entries(r.metrics)
+                    .slice(0, 3)
+                    .map(([k, v]) => `${k} ${typeof v === "number" ? v.toFixed(3) : v}`)
+                    .join(" · ")}
+                </td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+
+      {/* trust signals */}
+      <div className="flex flex-wrap gap-2 text-[10px]">
+        <span
+          className={`rounded-full px-1.5 py-0.5 ${
+            res.leakage.length ? "bg-amber-100 text-amber-800" : "bg-leaf/20 text-forest"
+          }`}
+        >
+          leakage: {res.leakage.length} findings
+        </span>
+        {res.redteam && (
+          <span
+            className={`rounded-full px-1.5 py-0.5 ${
+              res.redteam.verdict === "PASS" ? "bg-leaf/20 text-forest" : "bg-red-100 text-red-700"
+            }`}
+          >
+            red-team: {res.redteam.verdict} (Δrobust {res.redteam.robustness_drop})
+          </span>
+        )}
+      </div>
+
+      {/* verdict */}
+      {res.summary?.verdict && (
+        <div className="rounded-lg bg-leaf/10 p-2">
+          <p className="text-[11px] text-ink">{res.summary.verdict}</p>
+          {res.summary.insights?.length > 0 && (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[10px] text-muted">
+              {res.summary.insights.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-1 text-[10px] italic text-muted">
+            Predictive fit is not causal proof — a well-fit model shows association, not causation.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BrainstormChat({ projectId, result }: { projectId: string; result: EvidenceResult }) {
+  const [open, setOpen] = useState(false);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    const q = input.trim();
+    if (!q || busy) return;
+    const history = turns;
+    setTurns((t) => [...t, { role: "user", content: q }]);
+    setInput("");
+    setBusy(true);
+    try {
+      const { answer } = await Api.brainstorm(projectId, {
+        hypothesis: result.hypothesis,
+        brief: result.brief,
+        sources: result.sources,
+        question: q,
+        history,
+      });
+      setTurns((t) => [...t, { role: "assistant", content: answer }]);
+    } catch (err) {
+      setTurns((t) => [
+        ...t,
+        { role: "assistant", content: err instanceof Error ? `⚠ ${err.message}` : "⚠ failed" },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-line pt-3">
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-forest hover:bg-bg"
+        >
+          💬 Brainstorm with the evidence
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-forest">
+            Brainstorm — grounded in this brief
+          </p>
+          {turns.length > 0 && (
+            <div className="max-h-72 space-y-2 overflow-auto rounded-lg border border-line bg-white p-2">
+              {turns.map((t, i) => (
+                <div
+                  key={i}
+                  className={`text-sm ${t.role === "user" ? "text-ink" : "text-forest"}`}
+                >
+                  <span className="mr-1 text-xs font-semibold text-muted">
+                    {t.role === "user" ? "You" : "Agent"}
+                  </span>
+                  <p className="whitespace-pre-wrap">{t.content}</p>
+                </div>
+              ))}
+              {busy && <p className="text-xs text-muted">thinking…</p>}
+            </div>
+          )}
+          <form onSubmit={send} className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-line px-3 py-1.5 text-sm outline-none focus:border-leaf"
+              placeholder="e.g. What confounders should I control for? What data would settle this?"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+            />
+            <button
+              disabled={busy || !input.trim()}
+              className="rounded-lg bg-forest px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? "…" : "Ask"}
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

@@ -37,14 +37,24 @@ def _numbered(hyps: list[dict[str, Any]]) -> str:
     return "\n".join(f"{i + 1}. {h['text']}" for i, h in enumerate(hyps))
 
 
-def generate_hypotheses(goal: str, n: int, complete_fn: CompleteFn) -> list[dict[str, Any]]:
+def generate_hypotheses(
+    goal: str, n: int, complete_fn: CompleteFn, context: str = ""
+) -> list[dict[str, Any]]:
+    """Propose hypotheses. When `context` (an evidence brief) is given, the hypotheses are GROUNDED
+    in that real evidence rather than pure priors — the key link that makes the Co-Scientist useful."""
     system = (
-        "You are the Generation agent in a Co-Scientist system. Propose distinct, testable, "
-        "novel research hypotheses. Return ONLY a JSON array of hypothesis strings."
+        "You are the Generation agent in a Co-Scientist system. Propose distinct, testable, novel "
+        "research hypotheses." + (
+            " Ground every hypothesis in the provided evidence — build on what the studies found, "
+            "target the gaps, and phrase each so it is empirically testable with the named variables."
+            if context else ""
+        ) + " Return ONLY a JSON array of hypothesis strings."
     )
-    raw = complete_fn(system, f"Goal: {goal}\nReturn exactly {n} hypotheses as a JSON array.")
+    ctx = f"\n\nEvidence to ground the hypotheses in:\n{context}" if context else ""
+    raw = complete_fn(system, f"Goal: {goal}{ctx}\nReturn exactly {n} hypotheses as a JSON array.")
     items = _parse_list(raw)[:n]
-    return [{"id": f"h{i}", "text": t, "elo": BASE_ELO, "critique": "", "origin": "generated"}
+    origin = "grounded" if context else "generated"
+    return [{"id": f"h{i}", "text": t, "elo": BASE_ELO, "critique": "", "origin": origin}
             for i, t in enumerate(items)]
 
 
@@ -110,10 +120,11 @@ def meta_review(ranked: list[dict[str, Any]], goal: str, complete_fn: CompleteFn
 
 
 def run_ideation(
-    goal: str, complete_fn: CompleteFn, *, n: int = 4, evolve_n: int = 2
+    goal: str, complete_fn: CompleteFn, *, n: int = 4, evolve_n: int = 2, context: str = ""
 ) -> dict[str, Any]:
-    """Full Co-Scientist pass. Returns {goal, hypotheses (ranked), meta_review}."""
-    hyps = generate_hypotheses(goal, n, complete_fn)
+    """Full Co-Scientist pass. When `context` (an evidence brief) is given, generation is grounded in
+    it. Returns {goal, hypotheses (ranked), meta_review}."""
+    hyps = generate_hypotheses(goal, n, complete_fn, context)
     reflect(hyps, goal, complete_fn)
     ranked = tournament(hyps, goal, complete_fn)
 

@@ -104,19 +104,30 @@ class DirectUrlResolver:
             return None
         if not any(url.lower().split("?")[0].endswith(ext) for ext in _DATA_EXT):
             return None
-        try:
-            import httpx
 
-            resp = httpx.get(url, timeout=self.timeout, follow_redirects=True)
-            resp.raise_for_status()
-        except Exception:
+        from laboratree.core.net import safe_fetch
+
+        # URL comes from paper text / LLM extraction — untrusted. SSRF-safe (per-hop) + size-capped.
+        content = safe_fetch(url, timeout=self.timeout)
+        if content is None:
             return None
         filename = url.split("?")[0].rstrip("/").split("/")[-1] or f"{_norm(ref.name)}.csv"
-        return FetchResult(ref, resp.content, filename, self.name, url)
+        return FetchResult(ref, content, filename, self.name, url)
 
 
 def default_resolvers() -> list[Resolver]:
-    return [DirectUrlResolver(), SklearnToyResolver()]
+    # Local/cheap first, then the registries (OpenML/UCI), then an open-web search (Brave→SerpAPI)
+    # as the last automated attempt before the agent's manual-upload fallback. Lazy import avoids a
+    # package-import cycle. WebSearchResolver is a no-op when no search key is configured.
+    from .resolvers import OpenMLResolver, UCIResolver, WebSearchResolver
+
+    return [
+        DirectUrlResolver(),
+        SklearnToyResolver(),
+        OpenMLResolver(),
+        UCIResolver(),
+        WebSearchResolver(),
+    ]
 
 
 class DataFetchAgent:

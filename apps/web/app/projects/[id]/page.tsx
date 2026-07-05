@@ -1,18 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Api, openBlob, type Project } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth";
-import SignalLab from "@/components/SignalLab";
-import PapersLab from "@/components/PapersLab";
-import InsightLab from "@/components/InsightLab";
-import IdeationLab from "@/components/IdeationLab";
-import TrendLab from "@/components/TrendLab";
-import DecisionLab from "@/components/DecisionLab";
-import CollectionLab from "@/components/CollectionLab";
-import PipelineLab from "@/components/PipelineLab";
+
+// Each Lab is loaded on demand (only when its tab is opened) so the project page opens fast and
+// heavy deps (React Flow, vega, papaparse) aren't pulled into the initial route bundle.
+const TabLoading = () => <p className="text-sm text-muted">Loading Lab…</p>;
+const dyn = (loader: () => Promise<{ default: React.ComponentType<{ projectId: string }> }>) =>
+  dynamic(loader, { ssr: false, loading: TabLoading });
+
+const SignalLab = dyn(() => import("@/components/SignalLab"));
+const PapersLab = dyn(() => import("@/components/PapersLab"));
+const InsightLab = dyn(() => import("@/components/InsightLab"));
+const IdeationLab = dyn(() => import("@/components/IdeationLab"));
+const TrendLab = dyn(() => import("@/components/TrendLab"));
+const DecisionLab = dyn(() => import("@/components/DecisionLab"));
+const CollectionLab = dyn(() => import("@/components/CollectionLab"));
+const PipelineLab = dyn(() => import("@/components/PipelineLab"));
+const LlmActivity = dyn(() => import("@/components/LlmActivity"));
 
 const TABS = [
   { key: "ideation", label: "Ideation Lab" },
@@ -23,6 +32,7 @@ const TABS = [
   { key: "decision", label: "Decision Lab" },
   { key: "papers", label: "Paper Lab" },
   { key: "pipeline", label: "Pipeline" },
+  { key: "llm", label: "LLM Activity" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -108,6 +118,7 @@ export default function ProjectWorkspace() {
         {tab === "decision" && <DecisionLab projectId={projectId} />}
         {tab === "papers" && <PapersLab projectId={projectId} />}
         {tab === "pipeline" && <PipelineLab projectId={projectId} />}
+        {tab === "llm" && <LlmActivity projectId={projectId} />}
       </div>
     </div>
   );

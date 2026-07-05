@@ -42,8 +42,11 @@ class Settings(BaseSettings):
     generation_model: str = ""
     reasoning_model: str = ""
 
-    # Plain OpenAI
+    # Plain OpenAI — or ANY OpenAI-compatible endpoint (DeepSeek, DeepInfra, Together, Fireworks,
+    # OpenRouter, Groq, a self-hosted vLLM/Ollama). Set openai_base_url to that provider's /v1 URL,
+    # openai_model to its model id, openai_api_key to its key. Leave base_url blank for real OpenAI.
     openai_api_key: str = ""
+    openai_base_url: str = ""  # e.g. https://api.deepseek.com  ·  https://api.deepinfra.com/v1/openai
     openai_model: str = "gpt-5.1"
     openai_embedding_model: str = "text-embedding-3-small"
 
@@ -74,6 +77,31 @@ class Settings(BaseSettings):
     blob_backend: str = "local"
     blob_local_root: str = ""
 
+    # --- Web search (dataset + evidence discovery; used by the fetch agent & Ideation Lab) ---
+    # Keys live only in the gitignored .env. Provider order: brave first, serpapi fallback.
+    web_search_provider: str = "brave"        # "brave" | "serpapi" | "none"
+    brave_search_api_key: str = ""
+    serpapi_key: str = ""
+    web_search_max_results: int = 8
+    # OpenAlex — free, keyless scholarly database for the evidence hunt (real journals/studies).
+    openalex_enabled: bool = True
+    openalex_mailto: str = ""                 # your email → OpenAlex "polite pool" (faster, optional)
+    # Semantic Scholar — free scholarly API (keyless works but is rate-limited; a key raises limits).
+    semantic_scholar_enabled: bool = True
+    semantic_scholar_api_key: str = ""
+
+    # --- Rate limiting + caching (Redis-backed; both fail open if Redis is down) ---
+    rate_limit_enabled: bool = True
+    ideation_cache_enabled: bool = True
+    ideation_cache_ttl_s: int = 86400          # cache evidence/data-hunt results for a day
+
+    # --- LLM observability ---
+    llm_tracing: bool = True
+    llm_price_per_1k: float | None = None      # optional cost estimate = tokens/1000 * this
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     # ---------- derived ----------
     @property
     def postgres_dsn(self) -> str:
@@ -87,6 +115,14 @@ class Settings(BaseSettings):
         """Sync DSN for Alembic migrations."""
         return (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    @property
+    def postgres_psycopg_dsn(self) -> str:
+        """Plain libpq DSN for a raw psycopg connection (LLM trace writes)."""
+        return (
+            f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 

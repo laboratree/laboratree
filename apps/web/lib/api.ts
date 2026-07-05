@@ -74,6 +74,9 @@ export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
 export function apiUpload<T>(path: string, form: FormData): Promise<T> {
   return request<T>(path, { method: "POST", headers: authHeaders(), body: form });
 }
+export function apiDelete(path: string): Promise<void> {
+  return request<void>(path, { method: "DELETE", headers: authHeaders() });
+}
 
 export async function downloadBlob(path: string, filename: string): Promise<void> {
   const res = await fetch(`${API_URL}${path}`, { headers: authHeaders() });
@@ -113,21 +116,63 @@ export type SignalSummary = {
   };
 };
 
-export type MathItem = { formula: string; explanation: string };
-export type PaperCardData = {
-  problem_statement: string;
-  models_used: string[];
+export type MathItem = {
+  formula: string;
+  plain?: string;
+  symbols?: string;
+  intuition?: string;
+  worked_example?: string;
+  example?: string; // legacy
+  explanation?: string; // legacy
+};
+export type ProblemStatement = { one_liner: string; plain: string };
+export type CardVariable = {
+  name: string;
+  description: string;
+  example_value: string;
+  type?: string;
+  units?: string;
+};
+export type CardModel = {
+  name: string;
+  summary: string;
+  universal?: string;
+  use_case?: string;
+  example?: string;
+  result?: string;
+  math?: MathItem[];
+};
+/** One piece of paper text that supports a card claim — the receipt behind a ✓ badge. */
+export type GroundingRef = { ordinal: number; quote: string };
+export type EmpiricalCard = {
+  paper_type: "empirical";
+  problem_statement: ProblemStatement;
+  detailed_summary?: string;
+  best_model?: string;
+  // claim-key ("model:0", "results", "best_model", "variant:1", "data_sample") → supporting text.
+  // A missing key for a numeric claim means "could not verify in the paper".
+  grounding?: Record<string, GroundingRef[]>;
+  models_used: CardModel[];
   data_sources: string[];
   preprocessing: string[];
   data_sample: string;
-  independent_variables: string[];
-  target_variable: string;
-  variants: string[];
+  independent_variables: CardVariable[];
+  target_variable: CardVariable;
+  variants: (string | { name: string; description?: string })[];
   math: MathItem[];
   results: string;
   inference: string;
-  [k: string]: unknown;
 };
+export type Segment = { heading: string; body: string; analogy: string };
+export type ConceptualCard = {
+  paper_type: "conceptual";
+  one_liner: string;
+  problem_statement: ProblemStatement;
+  segments: Segment[];
+  glossary: { term: string; definition: string }[];
+  takeaways: string[];
+};
+export type PaperCardData = EmpiricalCard | ConceptualCard;
 export type Paper = {
   id: string;
   title: string;
@@ -148,6 +193,12 @@ export type WalkNode = {
   title: string;
   detail?: string;
   component_id?: string | null;
+  available?: boolean;              // false when the paper's model isn't a registered component
+  suggested_component?: string;     // comparable stand-in to run instead
+  // for preprocess nodes: the LLM's structured classification of the operation (+ any row filter),
+  // so the UI renders the right animation instead of guessing from the title text.
+  op?: PreprocessOp | "model_spec" | "split" | "none" | string;
+  filter?: RowFilter;
   params?: Record<string, unknown>;
 };
 export type FetchedDataset = {
@@ -158,6 +209,7 @@ export type FetchedDataset = {
   source: string;
   n_rows: number | null;
   n_cols: number | null;
+  synthetic?: boolean;
 };
 export type Unresolved = {
   name: string;
@@ -165,6 +217,209 @@ export type Unresolved = {
   source?: string | null;
   url?: string | null;
   instructions: string;
+};
+export type DatasetPreview = {
+  id: string;
+  name: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  n_rows: number | null;
+  n_cols: number | null;
+  synthetic: boolean;
+  truncated: boolean;
+};
+export type StepExampleTable = { caption: string; columns: string[]; rows: string[][] };
+export type StepExplainer = {
+  what_it_is: string;
+  why: string;
+  how_it_works: string[];
+  example: StepExampleTable | null;
+  takeaway: string;
+};
+export type PreprocessOp =
+  | "impute_mean"
+  | "impute_median"
+  | "standardize"
+  | "minmax"
+  | "drop_missing_rows"
+  | "filter_rows"
+  | "encode";
+export type RowFilter = { column: string; cmp: "lt" | "le" | "gt" | "ge" | "eq" | "ne"; value: number };
+export type ColStats = { mean: number; median: number; std: number; min: number; max: number };
+export type ColProfile = {
+  name: string;
+  dtype: "numeric" | "categorical";
+  missing: number;
+  missing_pct: number;
+  mean?: number | null;
+  std?: number | null;
+  min?: number | null;
+  max?: number | null;
+  q25?: number | null;
+  q50?: number | null;
+  q75?: number | null;
+  unique?: number | null;
+  top?: { value: string; count: number }[] | null;
+};
+export type DatasetProfile = {
+  n_rows: number;
+  n_cols: number;
+  columns: ColProfile[];
+  correlation?: { columns: string[]; matrix: number[][] } | null;
+};
+
+export type TreeSplit = { feature: string; threshold: number };
+export type TreeRoundRow = {
+  row: number;
+  feature: string;
+  value: number | null;
+  goes: string;
+  resid_before: number;
+  tree_out: number;
+  resid_after: number;
+};
+export type LinearContribution = { feature: string; value: number; weight: number; product: number };
+export type LinearSample = {
+  contributions: LinearContribution[];
+  sum: number;
+  prediction: string;
+  actual: number | string;
+};
+export type TreeNode = {
+  leaf: boolean;
+  samples: number;
+  prediction?: number | string;
+  confidence?: number;
+  feature?: string;
+  threshold?: number;
+  gain?: number;
+  left?: TreeNode;
+  right?: TreeNode;
+};
+export type PathStep = { feature: string; value: number; threshold: number; go: string };
+/** One candidate cut-point tried while choosing the tree's root split. */
+export type SplitCandidate = { t: number; impurity: number; gain: number; n_left: number; n_right: number };
+export type SplitScanFeature = {
+  feature: string;
+  candidates: SplitCandidate[];
+  best_t: number;
+  best_gain: number;
+};
+/** Root-split threshold scan — how the tree auditioned cut-points for its first question. */
+export type SplitScan = {
+  parent_impurity: number;
+  features: SplitScanFeature[]; // chosen feature first, then the best runners-up
+  chosen_feature: string;
+};
+export type TestRow = {
+  values: Record<string, number>;
+  predicted: number | string;
+  actual: number | string | null;
+  correct?: boolean | null;
+  error?: number | null;
+  path?: PathStep[]; // trees
+  contributions?: LinearContribution[]; // linear + timeseries (lags × φ)
+  sum?: number;
+  score?: number | null; // linear probability · anomaly score
+  input?: number[]; // nn
+  hidden?: number[];
+  output?: number;
+  x?: number; // knn/clustering/anomaly — position on the 2-D map
+  y?: number;
+  neighbors?: { x: number; y: number; label: number | string; distance: number }[]; // knn
+  distances?: { cluster: string; distance: number }[]; // clustering
+  rounds?: { path: PathStep[]; value: number }[]; // boosting: per-round leaf contribution
+  boost_score?: number; // baseline + Σ tree outputs
+  boost_prob?: number; // sigmoid(boost_score) for classification
+  boost_pred?: number | string;
+};
+export type ScatterPoint = { x: number; y: number; label: number | string };
+export type ModelTrace = {
+  family: string;
+  target: string;
+  task: string;
+  features: string[];
+  labels?: string[] | null;
+  table?: Record<string, number | string>[] | null;
+  tree?: TreeNode | null;
+  baseline?: number | null;
+  // boosting ensemble: one small tree per round + the table it receives (current pred, residual)
+  rounds?: { tree: TreeNode; table?: Record<string, number | string>[] }[] | null;
+  scan?: SplitScan | null; // trees — animated "how a split is chosen" threshold scan
+  intercept?: number | null;
+  coef?: { feature: string; weight: number }[] | null;
+  samples?: LinearSample[] | null;
+  layers?: number[] | null;
+  forward?: {
+    input: number[];
+    input_names: string[];
+    hidden: number[];
+    output: number;
+    w1?: number[][]; // learned weights: shown-inputs × hidden
+    w2?: number[]; // hidden → output
+  } | null;
+  points?: ScatterPoint[] | null; // knn/clustering/anomaly — 2-D map of training rows
+  series?: Record<string, unknown> | null; // family extras (axes, k, AR coefs, history…)
+  test_rows?: TestRow[] | null;
+  param_spec?: ParamSpec[] | null; // tunable hyperparameters the UI renders (with live values)
+  params?: Record<string, number | string> | null; // the values used to fit
+  note: string;
+};
+export type ExplainerMath = {
+  name: string;
+  formula: string;
+  plain: string;
+  symbols: { sym: string; means: string }[];
+  worked_example: string;
+};
+export type ExplainerTable = { caption: string; columns: string[]; rows: string[][] };
+export type ModelExplainer = {
+  family: string;
+  title: string;
+  one_liner: string;
+  analogy: string;
+  how_it_works: string[];
+  math: ExplainerMath[];
+  example_table: ExplainerTable | null;
+  when_to_use: string;
+  watch_out_for: string[];
+  references: { title: string; url: string }[];
+};
+export type ParamSpec = {
+  key: string;
+  label: string;
+  type: "int" | "float" | "select";
+  value: number | string;
+  default: number | string;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: string[];
+  help?: string;
+};
+export type FSHabitat = { selected: string[]; fitness: number };
+export type FSGeneration = { habitats: FSHabitat[]; best_fitness: number };
+export type FeatureSelectionTrace = {
+  target: string;
+  task: string;
+  features: string[];
+  importances: { feature: string; importance: number }[];
+  generations: FSGeneration[];
+  selected: string[];
+  best_fitness: number;
+  note: string;
+};
+export type PreprocessPreview = {
+  op: PreprocessOp;
+  columns: string[];
+  before: Record<string, unknown>[];
+  after: Record<string, unknown>[];
+  changed: string[][];
+  stats: Record<string, ColStats>;
+  summary: string;
+  removed?: boolean[] | null; // row ops: which sampled rows get dropped (red vs green)
+  n_removed_total?: number | null;
+  n_total?: number | null;
 };
 export type Experiment = {
   id: string;
@@ -174,12 +429,35 @@ export type Experiment = {
   fetch_report: { run_id?: string; fetched: FetchedDataset[]; unresolved: Unresolved[] };
   gate_id?: string | null;
 };
+export type Prediction = { actual: number | string; predicted: number | string };
 export type NodeRunResult = {
   run_id: string;
   component_id: string;
   forked: boolean;
   metrics: Record<string, number>;
+  task?: string;
+  predictions?: Prediction[];
   paper_reported: string;
+  synthetic?: boolean;
+  stand_in?: boolean;               // paper's model wasn't available; a comparable one was run
+};
+
+export type LlmCall = {
+  id: string;
+  lab: string;
+  operation: string;
+  provider: string;
+  model: string;
+  role: string;
+  total_tokens: number;
+  latency_ms: number;
+  cost_usd: number | null;
+  status: string;
+  created_at: string;
+};
+export type LlmSummary = {
+  by_lab: { lab: string; calls: number; tokens: number; cost_usd: number; avg_latency_ms: number }[];
+  totals: { calls: number; tokens: number; cost_usd: number };
 };
 
 export type Hypothesis = {
@@ -197,6 +475,105 @@ export type IdeationSession = {
   hypotheses: Hypothesis[];
   meta_review: string;
   created_at: string;
+};
+export type GroundedIdeationResult = IdeationSession & { evidence: EvidenceResult };
+
+export type EvidenceSource = {
+  title: string;
+  url: string;
+  snippet: string;
+  provider?: string;
+  query?: string;
+};
+export type TestVariable = {
+  name: string;
+  role:
+    | "independent"
+    | "dependent"
+    | "target"
+    | "control"
+    | "confounder"
+    | "mediator"
+    | "moderator"
+    | "instrument"
+    | string;
+  measure?: string; // how to operationalize it (proxy/unit/scale)
+  expected_direction?: "positive" | "negative" | "none" | "unclear" | string;
+  source_refs?: number[]; // which [n] sources motivate it
+  rationale?: string;
+};
+export type EvidenceBrief = {
+  summary: string;
+  stance: "supports" | "refutes" | "mixed" | "inconclusive" | string;
+  confidence?: number;
+  key_findings: { finding: string; sources?: number[] }[];
+  insights: string[];
+  variables_to_test: TestVariable[];
+  gaps: string[];
+};
+export type EvidenceResult = {
+  hypothesis: string;
+  queries: string[];
+  sources: EvidenceSource[];
+  brief: EvidenceBrief;
+};
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+export type PushPapersResult = {
+  imported: { title: string; paper_id: string; filename: string }[];
+  skipped: { title: string; reason: string }[];
+};
+export type OaSource = { title: string; url: string; pdf_url: string | null };
+export type DatasetCandidate = {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
+  relevance: number;
+  why_relevant: string;
+  variables_covered: string[];
+  access: "direct_download" | "portal" | "unknown" | string;
+  direct_download: boolean;
+};
+export type DataHuntResult = {
+  hypothesis: string;
+  variables: string[];
+  queries: string[];
+  candidates: DatasetCandidate[];
+};
+export type MasterTable = {
+  url: string;
+  name: string;
+  status: string;
+  n_rows?: number;
+  n_cols?: number;
+  in_master?: boolean;
+};
+export type MasterDatasetResult = {
+  dataset_id: string;
+  name: string;
+  n_rows: number;
+  n_cols: number;
+  columns: string[];
+  tables: MasterTable[];
+  note: string;
+};
+export type PipelineStep = {
+  step: string;
+  component: string;
+  run_id?: string;
+  evidence_count?: number;
+  outputs?: Record<string, unknown>;
+  error?: string;
+};
+export type AutoExperimentResult = {
+  task: string;
+  profile: { n_rows: number; n_cols: number; target: string };
+  plan: { preprocessing: string; models: string[]; rationale: string };
+  pipeline: PipelineStep[];
+  results: { component: string; metrics: Record<string, number>; run_id?: string | null }[];
+  leakage: { check?: string; severity?: string; column?: string; detail?: string }[];
+  redteam: { verdict?: string; base_metric?: number; robustness_drop?: number } | null;
+  summary: { best_model: string; verdict: string; insights: string[] };
 };
 
 export type Trust = {
@@ -269,6 +646,7 @@ export const Api = {
   createProject: (name: string, description = "") =>
     apiPost<Project>("/api/projects", { name, description }),
   getProject: (id: string) => apiGet<Project>(`/api/projects/${id}`),
+  deleteProject: (id: string) => apiDelete(`/api/projects/${id}`),
 
   consolidate: (projectId: string, files: File[]) => {
     const fd = new FormData();
@@ -283,13 +661,12 @@ export const Api = {
     return apiUpload<Paper>(`/api/projects/${projectId}/papers`, fd);
   },
   getPaper: (id: string) => apiGet<Paper>(`/api/papers/${id}`),
+  deletePaper: (id: string) => apiDelete(`/api/papers/${id}`),
   makeCard: (id: string, regenerate = false) =>
     apiPost<Paper>(`/api/papers/${id}/card?regenerate=${regenerate}`),
-  simplify: (id: string, field: string, level: number) =>
-    apiPost<{ field: string; level: number; simplified: string }>(`/api/papers/${id}/simplify`, {
-      field,
-      level,
-    }),
+  simplify: (id: string, body: { field?: string; text?: string; level: number }) =>
+    apiPost<{ field: string; level: number; simplified: string }>(
+      `/api/papers/${id}/simplify`, body),
   chat: (id: string, question: string) =>
     apiPost<ChatAnswer>(`/api/papers/${id}/chat`, { question }),
 
@@ -300,6 +677,11 @@ export const Api = {
     apiPatch<Member>(`/api/orgs/${orgId}/members/${userId}`, { role }),
 
   startExperiment: (paperId: string) => apiPost<Experiment>(`/api/papers/${paperId}/experiment`),
+  latestExperiment: (paperId: string) =>
+    apiGet<Experiment>(`/api/papers/${paperId}/experiment`).catch((e) => {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }),
   getExperiment: (id: string) => apiGet<Experiment>(`/api/experiments/${id}`),
   uploadExperimentData: (id: string, name: string, file: File) => {
     const fd = new FormData();
@@ -314,11 +696,104 @@ export const Api = {
     nodeId: string,
     body: { dataset_id: string; component_id?: string; params?: Record<string, unknown> },
   ) => apiPost<NodeRunResult>(`/api/experiments/${expId}/nodes/${nodeId}/run`, body),
+  demoData: (expId: string) =>
+    apiPost<Experiment & { caveat: string }>(`/api/experiments/${expId}/demo-data`),
+  datasetPreview: (datasetId: string, rows = 50) =>
+    apiGet<DatasetPreview>(`/api/datasets/${datasetId}/preview?rows=${rows}`),
+  datasetProfile: (datasetId: string) =>
+    apiGet<DatasetProfile>(`/api/datasets/${datasetId}/profile`),
+  modelExplainer: (family: string) =>
+    apiGet<ModelExplainer>(`/api/models/${family}/explainer`),
+  preprocessExplainer: (title: string, detail: string) =>
+    apiPost<StepExplainer>(`/api/preprocess-explainer`, { title, detail }),
+  modelTrace: (
+    datasetId: string,
+    target: string,
+    family: string,
+    params?: Record<string, number | string | string[]>,
+  ) =>
+    apiPost<ModelTrace>(
+      `/api/datasets/${datasetId}/model-trace?target=${encodeURIComponent(target)}&family=${family}`,
+      { params: params ?? {} },
+    ),
+  featureSelection: (datasetId: string, target: string) =>
+    apiPost<FeatureSelectionTrace>(
+      `/api/datasets/${datasetId}/feature-selection?target=${encodeURIComponent(target)}`,
+    ),
+  downloadDataset: (datasetId: string, filename: string) =>
+    downloadBlob(`/api/datasets/${datasetId}/download`, filename),
+  preprocessPreviewFilter: (datasetId: string, f: RowFilter, rows = 8) =>
+    apiPost<PreprocessPreview>(
+      `/api/datasets/${datasetId}/preprocess-preview?op=filter_rows&rows=${rows}` +
+        `&column=${encodeURIComponent(f.column)}&cmp=${f.cmp}&value=${f.value}`,
+    ),
+  refetchData: (experimentId: string) =>
+    apiPost<Experiment>(`/api/experiments/${experimentId}/fetch-data`),
+  buildMasterDataset: (experimentId: string) =>
+    apiPost<Experiment>(`/api/experiments/${experimentId}/master-dataset`),
+  sharePaper: (paperId: string) => apiPost<{ path: string }>(`/api/papers/${paperId}/share`),
+  downloadEvidenceBundle: (experimentId: string) =>
+    downloadBlob(
+      `/api/experiments/${experimentId}/evidence-bundle`,
+      `evidence-bundle-${experimentId.slice(0, 8)}.json`,
+    ),
+  preprocessPreview: (datasetId: string, op: PreprocessOp, rows = 6) =>
+    apiPost<PreprocessPreview>(
+      `/api/datasets/${datasetId}/preprocess-preview?op=${op}&rows=${rows}`,
+    ),
+
+  llmSummary: (projectId: string) => apiGet<LlmSummary>(`/api/projects/${projectId}/llm/summary`),
+  llmCalls: (projectId: string, limit = 25) =>
+    apiGet<LlmCall[]>(`/api/projects/${projectId}/llm/calls?limit=${limit}`),
 
   runIdeation: (projectId: string, body: { goal: string; n?: number; evolve_n?: number }) =>
     apiPost<IdeationSession>(`/api/projects/${projectId}/ideation`, body),
+  groundedIdeation: (projectId: string, body: { goal: string; n?: number; evolve_n?: number }) =>
+    apiPost<GroundedIdeationResult>(`/api/projects/${projectId}/ideation/grounded`, body),
   listIdeation: (projectId: string) =>
     apiGet<IdeationSession[]>(`/api/projects/${projectId}/ideation`),
+  evidenceHunt: (projectId: string, hypothesis: string, maxSources = 12) =>
+    apiPost<EvidenceResult>(`/api/projects/${projectId}/ideation/evidence`, {
+      hypothesis,
+      max_sources: maxSources,
+    }),
+  resolveOa: (projectId: string, sources: EvidenceSource[], maxPapers = 12) =>
+    apiPost<{ sources: OaSource[] }>(`/api/projects/${projectId}/ideation/resolve-oa`, {
+      sources,
+      max_papers: maxPapers,
+    }),
+  pushToPaperLab: (projectId: string, sources: { title: string; url: string }[], maxPapers = 8) =>
+    apiPost<PushPapersResult>(`/api/projects/${projectId}/ideation/push-to-paper-lab`, {
+      sources,
+      max_papers: maxPapers,
+    }),
+  brainstorm: (
+    projectId: string,
+    payload: {
+      hypothesis: string;
+      brief: EvidenceBrief;
+      sources: EvidenceSource[];
+      question: string;
+      history: ChatTurn[];
+    },
+  ) => apiPost<{ answer: string }>(`/api/projects/${projectId}/ideation/brainstorm`, payload),
+  dataHunt: (projectId: string, hypothesis: string, variables: string[], maxCandidates = 10) =>
+    apiPost<DataHuntResult>(`/api/projects/${projectId}/ideation/data-hunt`, {
+      hypothesis,
+      variables,
+      max_candidates: maxCandidates,
+    }),
+  buildDataset: (projectId: string, candidates: DatasetCandidate[], name = "master (web)") =>
+    apiPost<MasterDatasetResult>(`/api/projects/${projectId}/ideation/build-dataset`, {
+      candidates,
+      name,
+    }),
+  autoExperiment: (projectId: string, datasetId: string, target: string, hypothesis = "") =>
+    apiPost<AutoExperimentResult>(`/api/projects/${projectId}/ideation/auto-experiment`, {
+      dataset_id: datasetId,
+      target,
+      hypothesis,
+    }),
 
   generateReport: (projectId: string) =>
     apiPost<ReportResult>(`/api/projects/${projectId}/report`),

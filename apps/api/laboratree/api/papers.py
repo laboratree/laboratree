@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from ..core.deps import PrincipalDep, SessionDep
+from ..core.deps import Principal, PrincipalDep, SessionDep, require_role
+from ..tenancy.models import Role
+from ..core.llm.context import use_llm_context
 from ..core.storage import get_blob_store
 from ..labs.paper import llm as paper_llm
 from ..labs.paper.card import generate_card
@@ -116,6 +118,18 @@ async def get_paper(paper_id: uuid.UUID, principal: PrincipalDep, session: Sessi
     return await _require_paper(session, principal, paper_id)
 
 
+@router.delete("/papers/{paper_id}", status_code=204)
+async def delete_paper(
+    paper_id: uuid.UUID,
+    session: SessionDep,
+    principal: Annotated[Principal, Depends(require_role(Role.ANALYST))],
+) -> None:
+    """Delete a paper and its chunks + experiments (DB-level ON DELETE CASCADE). Analyst+ only."""
+    paper = await _require_paper(session, principal, paper_id)
+    await session.delete(paper)
+    await session.commit()
+
+
 async def _paper_text(session, paper: Paper) -> str:
     rows = (
         await session.execute(
@@ -136,7 +150,8 @@ async def make_card(
     if paper.card and not regenerate:
         return paper
     text = await _paper_text(session, paper)
-    paper.card = generate_card(text, complete_fn=paper_llm.default_complete)
+    with use_llm_context("paper", "card", project_id=paper.project_id, org_id=principal.org_id):
+        paper.card = generate_card(text, complete_fn=paper_llm.default_complete)
     paper.status = PaperStatus.CARDED
     await session.commit()
     await session.refresh(paper)
@@ -154,7 +169,8 @@ async def simplify(
     if not source:
         raise HTTPException(status_code=400, detail="nothing to simplify (give field or text)")
 
-    result = simplify_text(source, body.level, complete_fn=paper_llm.default_complete)
+    with use_llm_context("paper", "simplify", project_id=paper.project_id, org_id=principal.org_id):
+        result = simplify_text(source, body.level, complete_fn=paper_llm.default_complete)
 
     # cache per field+level
     key = body.field or "_text"
@@ -170,11 +186,12 @@ async def chat(
     paper_id: uuid.UUID, body: ChatIn, principal: PrincipalDep, session: SessionDep
 ) -> dict[str, Any]:
     paper = await _require_paper(session, principal, paper_id)
-    passages = await retrieve(
-        session,
-        paper_id=paper.id,
-        org_id=principal.org_id,
-        query=body.question,
-        embed_fn=paper_llm.default_embed,
-    )
-    return rag_answer(body.question, passages, complete_fn=paper_llm.default_complete)
+    with use_llm_context("paper", "chat", project_id=paper.project_id, org_id=principal.org_id):
+        passages = await retrieve(
+            session,
+            paper_id=paper.id,
+            org_id=principal.org_id,
+            query=body.question,
+            embed_fn=paper_llm.default_embed,
+        )
+        return rag_answer(body.question, passages, complete_fn=paper_llm.default_complete)
