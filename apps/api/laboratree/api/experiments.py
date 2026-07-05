@@ -31,6 +31,31 @@ class NodeRunIn(BaseModel):
     params: dict[str, Any] = {}
 
 
+class ExplainStepIn(BaseModel):
+    title: str
+    detail: str = ""
+
+
+@router.post("/preprocess-explainer")
+async def preprocess_explainer(
+    body: ExplainStepIn, principal: PrincipalDep, session: SessionDep
+) -> dict[str, Any]:
+    """Explain an unusual pipeline step (fixed effects, clustered SEs, IV, …) to a beginner with a
+    worked example table — generated on demand and cached (the explanation is the same everywhere)."""
+    import asyncio
+
+    from ..core.cache import cache_key, cached_json
+    from ..core.config import settings
+    from ..labs.paper.experiment.explain import explain_step
+
+    def _run() -> dict[str, Any]:
+        with use_llm_context("paper", "preprocess_explain"):
+            return explain_step(body.title, body.detail, paper_llm.default_complete)
+
+    key = cache_key("ppexplain", "global", body.title.strip().lower(), body.detail.strip().lower()[:300])
+    return await cached_json(key, settings.ideation_cache_ttl_s, lambda: asyncio.to_thread(_run))
+
+
 async def _require_experiment(session, principal, experiment_id: uuid.UUID) -> Experiment:
     exp = await session.get(Experiment, experiment_id)
     if exp is None or exp.org_id != principal.org_id:
@@ -141,6 +166,214 @@ async def demo_data(
     await session.commit()
     await session.refresh(exp)
     return {**_detail(exp), "caveat": demo["caveat"]}
+
+
+@router.post("/experiments/{experiment_id}/fetch-data", status_code=201)
+async def refetch_data(
+    experiment_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+) -> dict[str, Any]:
+    """Re-run the dataset auto-fetch (direct URL → OpenML → UCI resolvers) on an EXISTING
+    experiment and append anything resolved — so revisiting an old experiment can still pull the
+    paper's real data without starting over."""
+    import asyncio
+
+    from ..labs.paper.experiment.fetch import DataFetchAgent, extract_dataset_refs
+    from ..labs.paper.experiment.service import store_fetched_dataset
+
+    exp = await _require_experiment(session, principal, experiment_id)
+    paper = await session.get(Paper, exp.paper_id)
+    if paper is None or paper.org_id != principal.org_id:
+        raise HTTPException(status_code=404, detail="paper not found")
+
+    text = await _paper_text(session, paper)
+    with use_llm_context("paper", "refetch_data", project_id=exp.project_id, org_id=principal.org_id):
+        refs = extract_dataset_refs(text, paper_llm.default_complete)
+    # resolvers do real (rate-limited) HTTP — keep them off the event loop
+    outcome = await asyncio.to_thread(DataFetchAgent().resolve, refs)
+    if not outcome.fetched:
+        why = "; ".join(f"{g.name}: {g.reason}" for g in outcome.unresolved) or "no dataset references found"
+        raise HTTPException(status_code=404, detail=f"auto-fetch found nothing this time — {why}")
+
+    added = []
+    for fr in outcome.fetched:
+        ds = await store_fetched_dataset(
+            session, org_id=principal.org_id, project_id=exp.project_id, fr=fr
+        )
+        added.append({
+            "name": fr.ref.name, "filename": fr.filename, "dataset_id": str(ds.id),
+            "resolver": fr.resolver, "source": fr.source,
+            "n_rows": ds.n_rows, "n_cols": ds.n_cols,
+        })
+    report = dict(exp.fetch_report)
+    report["fetched"] = [*(report.get("fetched") or []), *added]
+    report["unresolved"] = [g.__dict__ for g in outcome.unresolved]
+    exp.fetch_report = report
+    flag_modified(exp, "fetch_report")
+    exp.status = ExperimentStatus.READY
+    await session.commit()
+    await session.refresh(exp)
+    return _detail(exp)
+
+
+@router.post("/experiments/{experiment_id}/master-dataset", status_code=201)
+async def build_master_dataset(
+    experiment_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+) -> dict[str, Any]:
+    """Consolidate every fetched/uploaded dataset into ONE master dataset: align columns by
+    (case-insensitive) name, stack the rows, drop exact duplicates and ID-like columns, and
+    register the result — the single table the rest of the pipeline runs on."""
+    import io as _io
+
+    import pandas as pd
+
+    exp = await _require_experiment(session, principal, experiment_id)
+    fetched = (exp.fetch_report or {}).get("fetched") or []
+    sources = [f for f in fetched if f.get("resolver") != "master"]
+    if not sources:
+        raise HTTPException(status_code=400, detail="no datasets to consolidate — fetch or upload first")
+
+    frames: list[pd.DataFrame] = []
+    used: list[str] = []
+    for f in sources:
+        ds = await session.get(Dataset, uuid.UUID(f["dataset_id"]))
+        if ds is None:
+            continue
+        try:
+            df = pd.read_csv(_io.BytesIO(get_blob_store().get(ds.storage_key)))
+        except Exception:
+            continue
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        frames.append(df)
+        used.append(f.get("name") or "dataset")
+    if not frames:
+        raise HTTPException(status_code=410, detail="dataset bytes missing")
+
+    master = pd.concat(frames, ignore_index=True, sort=False)
+    id_like = [c for c in master.columns if c in ("id", "index", "idx", "sno", "unnamed: 0")]
+    master = master.drop(columns=id_like, errors="ignore").drop_duplicates().reset_index(drop=True)
+
+    key = f"experiments/{exp.project_id}/{uuid.uuid4()}/master.csv"
+    get_blob_store().put(key, master.to_csv(index=False).encode())
+    ds = Dataset(
+        org_id=principal.org_id, project_id=exp.project_id,
+        name=f"master dataset ({len(used)} source{'s' if len(used) != 1 else ''})",
+        storage_key=key, content_hash=dataframe_hash(master),
+        n_rows=int(len(master)), n_cols=int(master.shape[1]),
+        synthetic=all(bool(f.get("synthetic")) for f in sources),
+    )
+    session.add(ds)
+    await session.flush()
+
+    report = dict(exp.fetch_report)
+    report["fetched"] = [
+        *(report.get("fetched") or []),
+        {
+            "name": ds.name, "filename": "master.csv", "dataset_id": str(ds.id),
+            "resolver": "master", "source": " + ".join(used),
+            "n_rows": ds.n_rows, "n_cols": ds.n_cols, "synthetic": ds.synthetic,
+        },
+    ]
+    exp.fetch_report = report
+    flag_modified(exp, "fetch_report")
+    await session.commit()
+    await session.refresh(exp)
+    return _detail(exp)
+
+
+@router.get("/experiments/{experiment_id}/evidence-bundle")
+async def evidence_bundle(
+    experiment_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+):
+    """One-click reproducibility receipts: everything needed to audit this experiment — the
+    paper's claims (with their grounded quotes), every dataset's content hash, the pipeline,
+    and every run with its provenance-locked Evidence values + repro manifest. Downloads as JSON."""
+    import json as _json
+    from datetime import datetime, timezone
+
+    from fastapi import Response
+
+    from ..projects.models import Evidence, Run
+
+    exp = await _require_experiment(session, principal, experiment_id)
+    paper = await session.get(Paper, exp.paper_id)
+    card = (paper.card if paper else None) or {}
+    grounding = card.get("grounding") or {}
+
+    # claims + their receipts (paper-verified sentences)
+    claims = []
+    for i, m in enumerate(card.get("models_used") or []):
+        if isinstance(m, dict) and m.get("result"):
+            refs = grounding.get(f"model:{i}") or []
+            claims.append({
+                "claim": f"{m.get('name')}: {m.get('result')}",
+                "verified_in_paper": bool(refs),
+                "supporting_quote": refs[0]["quote"] if refs else None,
+            })
+    if card.get("results"):
+        refs = grounding.get("results") or []
+        claims.append({
+            "claim": card["results"], "verified_in_paper": bool(refs),
+            "supporting_quote": refs[0]["quote"] if refs else None,
+        })
+
+    # datasets with content hashes
+    datasets = []
+    for f in (exp.fetch_report or {}).get("fetched") or []:
+        ds = await session.get(Dataset, uuid.UUID(f["dataset_id"]))
+        datasets.append({
+            **{k: f.get(k) for k in ("name", "resolver", "source", "n_rows", "n_cols", "synthetic")},
+            "content_hash": ds.content_hash if ds else None,
+        })
+
+    # every run belonging to this experiment + its Evidence entries
+    runs_out = []
+    run_rows = (
+        await session.execute(
+            select(Run)
+            .where(Run.org_id == principal.org_id,
+                   Run.params["experiment_id"].astext == str(exp.id))
+            .order_by(Run.created_at)
+        )
+    ).scalars().all()
+    for r in run_rows:
+        ev = (
+            await session.execute(select(Evidence).where(Evidence.run_id == r.id))
+        ).scalars().all()
+        params = {k: v for k, v in (r.params or {}).items() if k != "experiment_id"}
+        runs_out.append({
+            "run_id": str(r.id),
+            "component_id": r.component_id,
+            "status": str(r.status.value if hasattr(r.status, "value") else r.status),
+            "created_at": str(r.created_at),
+            "params": params,
+            "repro_manifest": r.repro_manifest,
+            "evidence": [
+                {"label": e.label, "kind": e.kind, "value": (e.value or {}).get("v")} for e in ev
+            ],
+        })
+
+    bundle = {
+        "bundle": "laboratree.evidence",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "paper": {"title": paper.title if paper else "", "filename": paper.filename if paper else ""},
+        "paper_claims": claims,
+        "datasets": datasets,
+        "pipeline": [
+            {k: n.get(k) for k in ("kind", "title", "component_id", "params")}
+            for n in (exp.walkthrough or [])
+        ],
+        "runs": runs_out,
+        "note": "Every metric here originates from a real execution (Evidence Ledger); dataset "
+        "content hashes + repro manifests let a third party re-run and compare.",
+    }
+    return Response(
+        content=_json.dumps(bundle, indent=2, default=str),
+        media_type="application/json",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="evidence-bundle-{str(exp.id)[:8]}.json"'
+        },
+    )
 
 
 @router.get("/experiments/{experiment_id}")
@@ -259,6 +492,10 @@ async def run_node(
             inputs={"dataset": df},
             lab="paper.experiment",
         )
+        # tag the Run so the evidence bundle can gather every run of THIS experiment
+        result.run.params = {**(result.run.params or {}), "experiment_id": str(exp.id)}
+        flag_modified(result.run, "params")
+        await session.commit()
     except RunFailed as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

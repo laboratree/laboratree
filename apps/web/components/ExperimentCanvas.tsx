@@ -40,6 +40,7 @@ import {
   type PreprocessOp,
   type PreprocessPreview,
   type RowFilter,
+  type StepExplainer as StepExplainerData,
   type Unresolved,
   type WalkNode,
 } from "@/lib/api";
@@ -1891,6 +1892,105 @@ const PP_OP_SET = new Set<PreprocessOp>([
   "impute_mean", "impute_median", "standardize", "minmax", "drop_missing_rows", "filter_rows", "encode",
 ]);
 
+/** On-demand beginner explainer for an unusual step (fixed effects, clustered SEs, …): what it is,
+ *  why, how it works, and a worked EXAMPLE TABLE — so anyone understands exactly what it does. */
+function StepExplainer({ title, detail }: { title: string; detail: string }) {
+  const [ex, setEx] = useState<StepExplainerData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setBusy(true);
+    setError(null);
+    try {
+      setEx(await Api.preprocessExplainer(title, detail));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!ex) {
+    return (
+      <div>
+        <button
+          onClick={load}
+          disabled={busy}
+          className="rounded-lg border border-leaf/50 bg-leaf/10 px-2.5 py-1 text-xs font-medium text-forest hover:bg-leaf/20 disabled:opacity-50"
+        >
+          {busy ? "Explaining…" : "📖 Explain this simply — with an example"}
+        </button>
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-line bg-white p-3 text-sm">
+      <p className="text-ink">
+        <b className="text-forest">What it is: </b>
+        {ex.what_it_is}
+      </p>
+      {ex.why && (
+        <p className="text-ink">
+          <b className="text-forest">Why: </b>
+          {ex.why}
+        </p>
+      )}
+      {ex.how_it_works?.length > 0 && (
+        <ol className="space-y-1">
+          {ex.how_it_works.map((s, i) => (
+            <li key={i} className="flex gap-2 text-ink">
+              <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-forest text-[10px] font-bold text-white">
+                {i + 1}
+              </span>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {ex.example && (
+        <div>
+          {ex.example.caption && (
+            <p className="mb-1 text-xs font-medium text-forest">{ex.example.caption}</p>
+          )}
+          <div className="overflow-x-auto rounded-lg border border-line">
+            <table className="min-w-full text-xs">
+              <thead className="bg-bg">
+                <tr>
+                  {ex.example.columns.map((c) => (
+                    <th key={c} className="whitespace-nowrap px-2 py-1 text-left font-medium text-forest">
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ex.example.rows.map((r, i) => (
+                  <tr key={i} className="border-t border-line/60">
+                    {r.map((cell, j) => (
+                      <td key={j} className="whitespace-nowrap px-2 py-1 text-ink">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {ex.takeaway && (
+        <p className="rounded-lg bg-leaf/10 p-2 text-xs text-forest">
+          <b>In short: </b>
+          {ex.takeaway}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PreprocessPanel({ exp, node }: { exp: Experiment; node: WalkNode }) {
   const fetched = exp.fetch_report.fetched;
   const text = `${node.title}. ${node.detail ?? ""}`;
@@ -1932,12 +2032,14 @@ function PreprocessPanel({ exp, node }: { exp: Experiment; node: WalkNode }) {
 
   if (specStep) {
     return (
-      <div className="mt-3 rounded-lg border border-line bg-bg p-3 text-sm text-ink">
-        <b className="text-forest">Model-specification step — nothing to transform.</b> This describes{" "}
-        <i>how the model is estimated</i> (e.g. year fixed effects, standard errors clustered by
-        state), not a change applied to the data itself. There&apos;s no table to animate — it takes
-        effect when the model runs, and it mainly affects the confidence intervals / significance, not
-        the data values.
+      <div className="mt-3 space-y-2">
+        <div className="rounded-lg border border-line bg-bg p-3 text-sm text-ink">
+          <b className="text-forest">Model-specification step — nothing to transform.</b> This
+          describes <i>how the model is estimated</i> (e.g. year fixed effects, standard errors
+          clustered by state), not a change applied to the data itself. It takes effect when the model
+          runs and mainly affects the confidence intervals / significance, not the data values.
+        </div>
+        <StepExplainer title={node.title} detail={node.detail ?? ""} />
       </div>
     );
   }

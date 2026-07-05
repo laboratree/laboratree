@@ -228,6 +228,14 @@ export type DatasetPreview = {
   synthetic: boolean;
   truncated: boolean;
 };
+export type StepExampleTable = { caption: string; columns: string[]; rows: string[][] };
+export type StepExplainer = {
+  what_it_is: string;
+  why: string;
+  how_it_works: string[];
+  example: StepExampleTable | null;
+  takeaway: string;
+};
 export type PreprocessOp =
   | "impute_mean"
   | "impute_median"
@@ -696,6 +704,8 @@ export const Api = {
     apiGet<DatasetProfile>(`/api/datasets/${datasetId}/profile`),
   modelExplainer: (family: string) =>
     apiGet<ModelExplainer>(`/api/models/${family}/explainer`),
+  preprocessExplainer: (title: string, detail: string) =>
+    apiPost<StepExplainer>(`/api/preprocess-explainer`, { title, detail }),
   modelTrace: (
     datasetId: string,
     target: string,
