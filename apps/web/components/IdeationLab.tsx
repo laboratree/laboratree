@@ -45,13 +45,13 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <EvidenceHunt projectId={projectId} />
-
       <div className="rounded-2xl border border-line bg-white p-5">
         <h2 className="font-display text-xl text-forest">Co-Scientist</h2>
         <p className="mt-1 text-sm text-muted">
-          State a research goal. Agents generate hypotheses, debate them in an Elo tournament,
-          evolve the strongest, and synthesize a direction.
+          State a research goal or hypothesis. With <b>Ground in evidence</b> on, the agent first
+          hunts real papers &amp; studies, then generates and Elo-ranks hypotheses grounded in that
+          evidence. Open any hypothesis to gather more evidence, find datasets, build a master
+          dataset, run an auto-experiment, or pull the papers into the Paper Lab.
         </p>
         <form onSubmit={run} className="mt-4 space-y-3">
           <textarea
@@ -107,7 +107,7 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
               <h3 className="font-display text-lg text-forest">
                 Evidence the hypotheses were grounded in
               </h3>
-              <EvidenceBriefView projectId={projectId} result={evidence} compact />
+              <EvidenceBriefView projectId={projectId} result={evidence} />
             </div>
           )}
 
@@ -160,53 +160,6 @@ const STANCE_STYLE: Record<string, { bg: string; label: string }> = {
   inconclusive: { bg: "bg-bg text-muted", label: "inconclusive" },
 };
 
-function EvidenceHunt({ projectId }: { projectId: string }) {
-  const [hypothesis, setHypothesis] = useState("");
-  const [result, setResult] = useState<EvidenceResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function run(e: React.FormEvent) {
-    e.preventDefault();
-    if (hypothesis.trim().length < 8) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await Api.evidenceHunt(projectId, hypothesis.trim()));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "evidence hunt failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="rounded-2xl border border-line bg-white p-5">
-      <h2 className="font-display text-xl text-forest">Evidence hunt</h2>
-      <p className="mt-1 text-sm text-muted">
-        State a conceptual hypothesis. The agent searches the open web for papers, studies and
-        articles, then returns a cited brief — what the evidence says, and the variables to test next.
-      </p>
-      <form onSubmit={run} className="mt-4 space-y-3">
-        <textarea
-          className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-leaf"
-          rows={2}
-          placeholder="e.g. If female literacy rises in rural India, rural development improves."
-          value={hypothesis}
-          onChange={(e) => setHypothesis(e.target.value)}
-        />
-        <button
-          disabled={busy || hypothesis.trim().length < 8}
-          className="rounded-lg bg-leaf px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {busy ? "Searching the web…" : "🔍 Gather evidence"}
-        </button>
-      </form>
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-      {result && <EvidenceBriefView projectId={projectId} result={result} />}
-    </div>
-  );
-}
 
 function InlineEvidence({ projectId, hypothesis }: { projectId: string; hypothesis: string }) {
   const [result, setResult] = useState<EvidenceResult | null>(null);
