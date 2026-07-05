@@ -87,6 +87,13 @@ export async function downloadBlob(path: string, filename: string): Promise<void
   URL.revokeObjectURL(url);
 }
 
+export async function openBlob(path: string): Promise<void> {
+  const res = await fetch(`${API_URL}${path}`, { headers: authHeaders() });
+  if (!res.ok) throw new ApiError(res.status, "open failed");
+  const blob = await res.blob();
+  window.open(URL.createObjectURL(blob), "_blank");
+}
+
 // ---------------- typed shapes ----------------
 export type TokenOut = { access_token: string; org_id: string };
 export type Me = { id: string; email: string; full_name: string; active_org_id: string; role: string };
@@ -135,6 +142,121 @@ export type ChatAnswer = { answer: string; citations: number[]; used: { ordinal:
 export type Member = { user_id: string; email: string; full_name: string; role: string };
 export const ROLES = ["viewer", "analyst", "admin", "owner"] as const;
 
+export type WalkNode = {
+  id: string;
+  kind: string;
+  title: string;
+  detail?: string;
+  component_id?: string | null;
+  params?: Record<string, unknown>;
+};
+export type FetchedDataset = {
+  name: string;
+  filename: string;
+  dataset_id: string;
+  resolver: string;
+  source: string;
+  n_rows: number | null;
+  n_cols: number | null;
+};
+export type Unresolved = {
+  name: string;
+  reason: string;
+  source?: string | null;
+  url?: string | null;
+  instructions: string;
+};
+export type Experiment = {
+  id: string;
+  paper_id: string;
+  status: string;
+  walkthrough: WalkNode[];
+  fetch_report: { run_id?: string; fetched: FetchedDataset[]; unresolved: Unresolved[] };
+  gate_id?: string | null;
+};
+export type NodeRunResult = {
+  run_id: string;
+  component_id: string;
+  forked: boolean;
+  metrics: Record<string, number>;
+  paper_reported: string;
+};
+
+export type Hypothesis = {
+  id: string;
+  text: string;
+  elo: number;
+  rank: number;
+  critique?: string;
+  origin?: string;
+};
+export type IdeationSession = {
+  id: string;
+  goal: string;
+  status: string;
+  hypotheses: Hypothesis[];
+  meta_review: string;
+  created_at: string;
+};
+
+export type Trust = {
+  score: number;
+  reproducibility: number;
+  evidence_coverage: number;
+  leakage_flags: number;
+  n_runs: number;
+};
+export type ReportResult = {
+  run_id: string;
+  artifact_id: string;
+  download_url: string;
+  trust: Trust;
+  project: string;
+};
+
+export type SurveyQuestion = { id: string; text: string; type: string; options?: string[] };
+export type BiasFinding = { question: string; issue: string; severity: string; suggestion: string };
+export type SampleResult = {
+  sample_size: number;
+  unadjusted: number;
+  params: Record<string, unknown>;
+};
+export type PilotResult = { persona: string; n: number; respondents: Record<string, string>[] };
+
+export type ComponentSpecLite = {
+  id: string;
+  name: string;
+  kind: string;
+  summary: string;
+  tags: string[];
+};
+export type PipelineStepResult = {
+  component_id: string;
+  run_id?: string;
+  status: string;
+  evidence_count?: number;
+  preview?: Record<string, unknown>;
+  error?: string;
+};
+export type PipelineResult = { steps: PipelineStepResult[]; n_rows_final: number; ok: boolean };
+
+export type RunDetail = {
+  id: string;
+  status: string;
+  lab: string;
+  component_id: string | null;
+  error: string | null;
+  repro_manifest: Record<string, unknown>;
+  created_at: string;
+};
+export type EvidenceItem = {
+  id: string;
+  label: string;
+  kind: string;
+  value: unknown;
+  meta: Record<string, unknown>;
+};
+
 // ---------------- endpoint helpers ----------------
 export const Api = {
   register: (email: string, password: string, full_name: string) =>
@@ -176,4 +298,67 @@ export const Api = {
     apiPost<Member>(`/api/orgs/${orgId}/members`, { email, role }),
   setMemberRole: (orgId: string, userId: string, role: string) =>
     apiPatch<Member>(`/api/orgs/${orgId}/members/${userId}`, { role }),
+
+  startExperiment: (paperId: string) => apiPost<Experiment>(`/api/papers/${paperId}/experiment`),
+  getExperiment: (id: string) => apiGet<Experiment>(`/api/experiments/${id}`),
+  uploadExperimentData: (id: string, name: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiUpload<Experiment>(
+      `/api/experiments/${id}/data?name=${encodeURIComponent(name)}`,
+      fd,
+    );
+  },
+  runNode: (
+    expId: string,
+    nodeId: string,
+    body: { dataset_id: string; component_id?: string; params?: Record<string, unknown> },
+  ) => apiPost<NodeRunResult>(`/api/experiments/${expId}/nodes/${nodeId}/run`, body),
+
+  runIdeation: (projectId: string, body: { goal: string; n?: number; evolve_n?: number }) =>
+    apiPost<IdeationSession>(`/api/projects/${projectId}/ideation`, body),
+  listIdeation: (projectId: string) =>
+    apiGet<IdeationSession[]>(`/api/projects/${projectId}/ideation`),
+
+  generateReport: (projectId: string) =>
+    apiPost<ReportResult>(`/api/projects/${projectId}/report`),
+
+  designQuestionnaire: (projectId: string, body: { goal: string; audience: string; n: number }) =>
+    apiPost<{ questions: SurveyQuestion[] }>(
+      `/api/projects/${projectId}/collection/questionnaire`, body),
+  biasCheck: (projectId: string, questions: string[]) =>
+    apiPost<{ findings: BiasFinding[] }>(
+      `/api/projects/${projectId}/collection/bias-check`, { questions }),
+  sampleSize: (
+    projectId: string,
+    body: { confidence: number; margin: number; population?: number | null; proportion: number },
+  ) => apiPost<SampleResult>(`/api/projects/${projectId}/collection/sample-size`, body),
+  pilot: (projectId: string, body: { questions: string[]; persona: string; n: number }) =>
+    apiPost<PilotResult>(`/api/projects/${projectId}/collection/pilot`, body),
+
+  getRun: (id: string) => apiGet<RunDetail>(`/api/runs/${id}`),
+  getRunEvidence: (id: string) => apiGet<EvidenceItem[]>(`/api/runs/${id}/evidence`),
+  listComponents: () =>
+    apiGet<{ count: number; components: ComponentSpecLite[] }>("/api/components"),
+  runPipeline: (
+    projectId: string,
+    body: {
+      steps: { component_id: string; params: Record<string, unknown> }[];
+      dataset?: Record<string, unknown>[] | null;
+    },
+  ) => apiPost<PipelineResult>(`/api/projects/${projectId}/pipeline/run`, body),
+
+  runComponent: (
+    projectId: string,
+    component_id: string,
+    params: Record<string, unknown>,
+    dataset: Record<string, unknown>[],
+  ) =>
+    apiPost<RunPreview>(`/api/projects/${projectId}/runs`, { component_id, params, dataset }),
+};
+
+export type RunPreview = {
+  run: { id: string; status: string; repro_manifest: Record<string, unknown> };
+  evidence_count: number;
+  preview: Record<string, unknown>;
 };
