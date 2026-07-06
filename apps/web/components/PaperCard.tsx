@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import ModelExplainerCard from "@/components/ModelExplainerCard";
 import { modelKind } from "@/components/ModelAnimation";
+import Tex from "@/components/Tex";
 
 export default function PaperCard({ paperId, card }: { paperId: string; card: PaperCardData }) {
   if (card.paper_type === "conceptual") return <Conceptual paperId={paperId} card={card} />;
@@ -271,7 +272,9 @@ function ModelPop({ m }: { m: CardModel }) {
               <div className="mt-1 space-y-2">
                 {m.math.map((mm, i) => (
                   <div key={i} className="rounded-lg bg-bg p-2">
-                    <code className="block whitespace-pre-wrap text-forest">{mm.formula}</code>
+                    <div className="overflow-x-auto text-forest">
+                      <Tex block>{mm.formula}</Tex>
+                    </div>
                     {(mm.plain || mm.explanation) && (
                       <p className="mt-1 text-ink">{mm.plain || mm.explanation}</p>
                     )}

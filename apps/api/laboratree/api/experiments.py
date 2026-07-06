@@ -482,6 +482,16 @@ async def run_node(
             )
         params["target"] = match or df.columns[-1]
 
+    # Pre-flight: for a model node, catch the common 'won't run' cases (no numeric features, a
+    # one-value target, too few rows) and return a CLEAR, actionable reason instead of a cryptic
+    # sklearn crash deep in the run.
+    if component_id.startswith("model."):
+        from ..labs.modeling.evaluation.readiness import readiness_reason
+
+        reason = readiness_reason(df, str(params.get("target", "")), params.get("features"))
+        if reason:
+            raise HTTPException(status_code=422, detail=f"Can't run this model yet — {reason}")
+
     try:
         result = await execute_component(
             session,

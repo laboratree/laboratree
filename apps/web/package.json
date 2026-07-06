@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@react-spring/web": "^9.7.5",
+    "@types/katex": "^0.16.8",
     "@xyflow/react": "^12.3.5",
+    "katex": "^0.17.0",
     "lottie-react": "^2.4.1",
     "next": "^15.1.6",
     "papaparse": "^5.4.1",
