@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Api, type ModelExplainer } from "@/lib/api";
 import StagedModelAnimation from "@/components/StagedModelAnimation";
 import { explainerKind } from "@/components/ModelAnimation";
+import Tex from "@/components/Tex";
 
 /**
  * A beginner-first "learn this model from zero" modal for a model node. Fetches the curated explainer
@@ -108,15 +109,17 @@ export default function ModelExplainerCard({
                   {ex.math.map((m, i) => (
                     <div key={i} className="rounded-xl border border-line p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{m.name}</p>
-                      <p className="mt-1 overflow-x-auto rounded-lg bg-ink/[0.04] px-3 py-2 font-mono text-sm text-forest">
-                        {m.formula}
-                      </p>
+                      <div className="mt-1 overflow-x-auto rounded-lg bg-ink/[0.04] px-3 py-2.5 text-forest">
+                        <Tex block>{m.formula}</Tex>
+                      </div>
                       <p className="mt-2 text-sm text-ink">{m.plain}</p>
                       {m.symbols?.length > 0 && (
                         <dl className="mt-2 grid gap-x-3 gap-y-1 text-xs sm:grid-cols-2">
                           {m.symbols.map((s, j) => (
                             <div key={j} className="flex gap-1.5">
-                              <dt className="shrink-0 font-mono font-semibold text-leaf">{s.sym}</dt>
+                              <dt className="shrink-0 font-semibold text-leaf">
+                                <Tex>{s.sym}</Tex>
+                              </dt>
                               <dd className="text-muted">— {s.means}</dd>
                             </div>
                           ))}
