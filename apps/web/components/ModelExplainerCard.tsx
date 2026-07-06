@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Api, type ModelExplainer } from "@/lib/api";
 import StagedModelAnimation from "@/components/StagedModelAnimation";
+import { explainerKind } from "@/components/ModelAnimation";
 
 /**
  * A beginner-first "learn this model from zero" modal for a model node. Fetches the curated explainer
@@ -28,11 +29,13 @@ export default function ModelExplainerCard({
   const [ex, setEx] = useState<ModelExplainer | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // the GUIDE is keyed by the finer model name (Ridge → L1/L2 guide); the ANIMATION uses `family`.
+  const exFamily = explainerKind(modelName || family);
   useEffect(() => {
-    Api.modelExplainer(family)
+    Api.modelExplainer(exFamily)
       .then(setEx)
       .catch((e) => setErr(e instanceof Error ? e.message : "failed to load"));
-  }, [family]);
+  }, [exFamily]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();

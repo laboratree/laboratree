@@ -15,6 +15,7 @@ export type ModelKind =
   | "linear"
   | "knn"
   | "timeseries"
+  | "transformer"
   | "clustering"
   | "anomaly"
   | "generic";
@@ -28,13 +29,24 @@ export function modelKind(text: string): ModelKind {
   if (/(arima|sarima|time[\s-]?series|forecast|exponential smoothing|prophet|autoregress)/.test(s))
     return "timeseries";
   if (/(k-?nearest|nearest neighbou?r|\bknn\b)/.test(s)) return "knn";
-  if (/(neural|cnn|mlp|perceptron|deep|lstm|rnn|gru|transformer|network|dnn|autoencoder)/.test(s))
+  if (/(transformer|attention|\bbert\b|\bgpt\b|\bvit\b)/.test(s)) return "transformer";
+  if (/(neural|cnn|mlp|perceptron|deep|lstm|rnn|gru|network|dnn|autoencoder)/.test(s))
     return "nn";
   if (/(xgboost|xgb|boost|forest|tree|gbm|gbdt|catboost|lightgbm|gradient_boosting|bagging|ensemble)/.test(s))
     return "trees";
   if (/(linear|logistic|logit|ols|regression|svm|support vector|glm|ridge|lasso|probit|poisson|bayes)/.test(s))
     return "linear";
   return "generic";
+}
+
+/** Finer-grained key for the "learn this model" EXPLAINER (guide/summary) — distinct from the
+ *  animation family so e.g. Ridge/Lasso get an L1/L2 guide while still animating as a linear model. */
+export function explainerKind(text: string): string {
+  const s = (text || "").toLowerCase();
+  if (/(ridge|lasso|elastic|\bl1\b|\bl2\b|regulari[sz])/.test(s)) return "regularized";
+  if (/(support vector|\bsvm\b|\bsvr\b|\bsvc\b)/.test(s)) return "svm";
+  if (/(polynomial|quadratic|cubic)/.test(s)) return "polynomial";
+  return modelKind(text); // fall back to the animation family (which also has explainers)
 }
 
 /** True when a "model" node is really a feature-selection step (BBO etc.), not a predictive model. */
@@ -50,6 +62,7 @@ const KIND_CAPTION: Record<ModelKind, string> = {
   linear: "Each feature is weighted, summed, and turned into a prediction.",
   knn: "A new row is predicted by the most similar rows the model has memorized.",
   timeseries: "The next value is predicted from the last few values of the same series.",
+  transformer: "Every feature looks at every other feature and learns how much to listen.",
   clustering: "Rows are grouped by similarity — no answer column needed.",
   anomaly: "The model learns what usual rows look like and flags the unusual ones.",
   generic: "Data flows in, the model computes, a prediction comes out.",

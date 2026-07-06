@@ -138,6 +138,152 @@ EXPLAINERS: dict[str, dict[str, Any]] = {
              "url": "https://www.youtube.com/watch?v=yIYKR4sgzI8"},
         ],
     },
+    "regularized": {
+        "title": "Regularized regression — Ridge (L2), Lasso (L1) & Elastic Net",
+        "one_liner": "Plain regression can chase noise by blowing weights up. Regularization adds a "
+        "PENALTY on weight size to the fit, pulling weights toward zero: Ridge (L2) shrinks them all "
+        "smoothly, Lasso (L1) drives some to EXACTLY zero (automatic feature selection), and Elastic "
+        "Net blends both.",
+        "analogy": "A budget on how confident the model may be. Ridge taxes big weights gently so all "
+        "shrink a bit; Lasso taxes them so hard that weak features get cut to zero; Elastic Net mixes "
+        "the two.",
+        "how_it_works": [
+            "Fit weights as usual, but ADD a penalty proportional to weight size to the error being "
+            "minimized — so a weight only grows if it earns more than it costs.",
+            "The strength α (alpha) sets how harsh the penalty is: α=0 is ordinary least squares; "
+            "bigger α = more shrinkage = simpler model.",
+            "L2 (Ridge) penalizes squared weights → smooth shrink, keeps all features. L1 (Lasso) "
+            "penalizes absolute weights → some weights hit exactly 0, dropping those features.",
+            "Elastic Net uses both with a mix ratio, getting Lasso's feature-dropping without its "
+            "instability when features are correlated.",
+        ],
+        "math": [
+            _m("Ridge (L2 penalty)", "minimize  Σ(yᵢ − ŷᵢ)²  +  α·Σⱼ wⱼ²",
+               "Fit error PLUS alpha times the sum of squared weights — big weights are expensive, so "
+               "they shrink smoothly toward (but not to) zero.",
+               [("Σ(yᵢ−ŷᵢ)²", "the usual squared prediction error"), ("α", "penalty strength (≥0)"),
+                ("wⱼ", "weight on feature j")],
+               "Weights [4.0, 0.2] with α=1: penalty = 4.0² + 0.2² = 16.04, so the big weight 4.0 is "
+               "pushed down far more than 0.2 → both shrink, the large one most."),
+            _m("Lasso (L1 penalty)", "minimize  Σ(yᵢ − ŷᵢ)²  +  α·Σⱼ |wⱼ|",
+               "Same idea but penalizing ABSOLUTE weights — this corner-shaped penalty pushes weak "
+               "weights all the way to exactly 0, so Lasso also SELECTS features.",
+               [("|wⱼ|", "absolute value of weight j"), ("α", "penalty strength")],
+               "A feature with a tiny weight 0.05 and little predictive value gets driven to 0 → "
+               "dropped entirely, leaving a simpler model with only the features that matter."),
+            _m("Elastic Net (L1 + L2)", "minimize  Σ(yᵢ − ŷᵢ)²  +  α·( ρ·Σ|wⱼ| + (1−ρ)·Σwⱼ² )",
+               "A weighted blend of Lasso and Ridge; ρ (l1_ratio) slides from pure Ridge (ρ=0) to "
+               "pure Lasso (ρ=1).",
+               [("ρ", "mix ratio: 1 = all Lasso, 0 = all Ridge"), ("α", "overall penalty strength")],
+               "ρ=0.5 → half the penalty is L1 (drops weak features) and half L2 (stabilizes correlated "
+               "ones), a common robust default."),
+        ],
+        "example_table": {
+            "caption": "Same data, stronger penalty → weights shrink (Lasso zeroes the weak one)",
+            "columns": ["feature", "plain OLS weight", "Ridge (α=1)", "Lasso (α=1)"],
+            "rows": [["income", "4.0", "2.6", "2.1"], ["age", "0.9", "0.6", "0.3"],
+                     ["noise_col", "0.5", "0.2", "0.0 (dropped)"]],
+        },
+        "when_to_use": "Whenever plain linear/logistic regression overfits or you have many (or "
+        "correlated) features. Ridge when you want to keep all features but tame them; Lasso when you "
+        "want a sparse, self-selecting model; Elastic Net when features are correlated.",
+        "watch_out_for": [
+            "Standardize features first — the penalty is scale-sensitive, or big-scale columns get "
+            "unfairly shrunk.",
+            "Pick α by cross-validation; too large under-fits (everything shrinks toward the mean).",
+        ],
+        "references": [
+            {"title": "scikit-learn: Ridge, Lasso & Elastic-Net",
+             "url": "https://scikit-learn.org/stable/modules/linear_model.html"},
+            {"title": "StatQuest: Ridge (L2) Regularization (video)",
+             "url": "https://www.youtube.com/watch?v=Q81RR3yKn30"},
+            {"title": "StatQuest: Lasso (L1) Regularization (video)",
+             "url": "https://www.youtube.com/watch?v=NGf0voTMlcs"},
+        ],
+    },
+    "svm": {
+        "title": "Support Vector Machines / Regression (SVM / SVR)",
+        "one_liner": "Finds the widest possible 'street' that separates the classes (or, for "
+        "regression, a tube that most points fall inside). Only the points on the edges — the support "
+        "vectors — decide the boundary; the rest don't matter.",
+        "analogy": "Draw the fattest road you can between two neighbourhoods; only the houses right at "
+        "the kerb determine where the road goes.",
+        "how_it_works": [
+            "Find the boundary with the LARGEST margin (gap) to the nearest points of each class.",
+            "Only those nearest points (support vectors) matter — move a far-away point and nothing "
+            "changes.",
+            "A 'kernel' (e.g. RBF) lets the same idea draw curved boundaries by measuring similarity "
+            "instead of raw distance — without ever computing the curved space explicitly.",
+        ],
+        "math": [
+            _m("Maximize the margin", "maximize 2/‖w‖  s.t.  yᵢ(w·xᵢ + b) ≥ 1",
+               "Make the gap between the boundary and the closest points as wide as possible while "
+               "still classifying them correctly.",
+               [("w", "the boundary's weight vector"), ("‖w‖", "its length — smaller = wider margin"),
+                ("b", "offset"), ("yᵢ", "class label ±1")],
+               "If the closest points sit at distance 1/‖w‖ on each side, shrinking ‖w‖ from 2 to 1 "
+               "doubles the street width from 1 to 2."),
+            _m("RBF kernel (curved boundaries)", "K(a,b) = exp(−γ·‖a−b‖²)",
+               "A similarity score that's ~1 for nearby points and →0 for far ones; it lets SVM bend "
+               "the boundary around non-linear data.",
+               [("γ", "how fast similarity falls with distance"), ("‖a−b‖²", "squared distance")],
+               "Two identical rows → K=1; rows far apart → K≈0, so only nearby support vectors "
+               "influence a prediction."),
+        ],
+        "example_table": {
+            "caption": "Only the support vectors (edge points) set the boundary",
+            "columns": ["point", "distance to boundary", "support vector?"],
+            "rows": [["A", "1.0 (on margin)", "✓ yes"], ["B", "1.0 (on margin)", "✓ yes"],
+                     ["C", "3.4 (far inside)", "no — ignored"]],
+        },
+        "when_to_use": "Strong on small/medium datasets with a clear margin, including non-linear "
+        "boundaries via kernels. Great when features > samples.",
+        "watch_out_for": [
+            "Scale features first; RBF is very sensitive to γ and C — tune by cross-validation.",
+            "Slow and memory-heavy on very large datasets; no natural probability output.",
+        ],
+        "references": [
+            {"title": "scikit-learn: Support Vector Machines",
+             "url": "https://scikit-learn.org/stable/modules/svm.html"},
+            {"title": "StatQuest: Support Vector Machines (video)",
+             "url": "https://www.youtube.com/watch?v=efR1C6CvhmE"},
+        ],
+    },
+    "polynomial": {
+        "title": "Polynomial regression",
+        "one_liner": "Still linear regression under the hood — you just ADD powers of the features "
+        "(x², x³, …) as new columns, so a straight-line model can bend into curves.",
+        "analogy": "Give a ruler-only artist some pre-drawn curves (x², x³) to combine — now they can "
+        "trace a bendy shape using only straight-line math.",
+        "how_it_works": [
+            "Expand each feature into powers: x → [x, x², x³ …] (and cross terms for multiple features).",
+            "Run ordinary linear regression on those expanded columns — it learns a weight per power.",
+            "The result is a curved fit, but it's fit exactly like linear regression.",
+        ],
+        "math": [
+            _m("Degree-d polynomial", "ŷ = b + w₁x + w₂x² + … + w_d x^d",
+               "The prediction is a weighted sum of the feature and its powers — the weights bend the "
+               "line into a curve.",
+               [("d", "the degree (highest power)"), ("w_k", "weight on the k-th power of x"),
+                ("b", "intercept")],
+               "b=1, w₁=0, w₂=2 (a parabola): at x=3 → ŷ = 1 + 0·3 + 2·3² = 1 + 18 = 19."),
+        ],
+        "example_table": {
+            "caption": "Expanding one feature into powers before a linear fit",
+            "columns": ["x", "x²", "x³", "→ ŷ = 1 + 2x²"],
+            "rows": [["1", "1", "1", "3"], ["2", "4", "8", "9"], ["3", "9", "27", "19"]],
+        },
+        "when_to_use": "When the relationship is smoothly curved (U-shaped, growth-then-plateau) and "
+        "you want something interpretable and cheap.",
+        "watch_out_for": [
+            "High degrees overfit wildly and swing at the edges — keep the degree small (2–3).",
+            "Powers explode in scale; standardize, and prefer regularization at higher degrees.",
+        ],
+        "references": [
+            {"title": "scikit-learn: Polynomial features",
+             "url": "https://scikit-learn.org/stable/modules/linear_model.html#polynomial-regression"},
+        ],
+    },
     "nn": {
         "title": "Neural networks (MLP / deep learning)",
         "one_liner": "Stacked layers of simple units. Each unit takes a weighted mix of its inputs, "
