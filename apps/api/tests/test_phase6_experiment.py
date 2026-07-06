@@ -168,3 +168,18 @@ def test_experiment_fetch_hitl_and_node_run(monkeypatch):
         assert done.status_code == 201, done.text
         assert done.json()["status"] == "ready"
         assert done.json()["fetch_report"]["unresolved"] == []
+
+
+def test_readiness_reason_catches_bad_data():
+    import pandas as pd
+
+    from laboratree.labs.modeling.evaluation.readiness import readiness_reason
+
+    good = pd.DataFrame({"x1": [i * 0.5 for i in range(20)], "y": [i % 2 for i in range(20)]})
+    assert readiness_reason(good, "y") is None
+    assert "isn't in this dataset" in readiness_reason(good, "nope")
+    assert "too few" in readiness_reason(pd.DataFrame({"x1": [1.0, 2.0], "y": [0, 1]}), "y")
+    one = pd.DataFrame({"x1": [float(i) for i in range(20)], "y": [1] * 20})
+    assert "one distinct value" in readiness_reason(one, "y")
+    txt = pd.DataFrame({"name": ["a"] * 20, "y": [i % 2 for i in range(20)]})
+    assert "numeric" in readiness_reason(txt, "y")
