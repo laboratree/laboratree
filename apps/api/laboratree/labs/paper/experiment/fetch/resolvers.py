@@ -187,7 +187,7 @@ class OpenMLResolver:
     SEARCH_URL = "https://www.openml.org/api/v1/json/data/list/data_name/{slug}/limit/5"
     DESC_URL = "https://www.openml.org/api/v1/json/data/{did}"
 
-    def try_fetch(self, ref) -> "FetchResult | None":  # noqa: F821 - resolved at runtime below
+    def try_fetch(self, ref) -> FetchResult | None:  # noqa: F821 - resolved at runtime below
         budget = _Budget()
         try:
             return self._resolve(ref, budget)
@@ -257,7 +257,7 @@ class UCIResolver:
     SEARCH_URL = "https://archive.ics.uci.edu/api/datasets/list?search={query}"
     STATIC_CSV_URL = "https://archive.ics.uci.edu/static/public/{id}/data.csv"
 
-    def try_fetch(self, ref) -> "FetchResult | None":  # noqa: F821 - resolved at runtime below
+    def try_fetch(self, ref) -> FetchResult | None:  # noqa: F821 - resolved at runtime below
         budget = _Budget()
         try:
             return self._resolve(ref, budget)
@@ -359,7 +359,7 @@ class WebSearchResolver:
 
     name = "web_search"
 
-    def try_fetch(self, ref) -> "FetchResult | None":  # noqa: F821 - resolved at runtime below
+    def try_fetch(self, ref) -> FetchResult | None:  # noqa: F821 - resolved at runtime below
         try:
             return self._resolve(ref)
         except Exception:

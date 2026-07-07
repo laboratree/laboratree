@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter
@@ -10,6 +11,8 @@ from fastapi import APIRouter
 from ..core.db import mongo, neo4j, postgres, redis
 from ..core.llm import get_llm
 from ..core.storage import get_blob_store
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
@@ -19,6 +22,7 @@ async def _check(name: str, coro) -> tuple[str, dict[str, Any]]:
         await coro
         return name, {"ok": True}
     except Exception as exc:  # report, don't raise — health should always answer
+        log.warning("health check for %s failed: %s: %s", name, type(exc).__name__, exc)
         return name, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 

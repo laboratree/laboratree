@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 async def mirror_to_neo4j(
@@ -40,5 +43,6 @@ async def mirror_to_neo4j(
                     )
                 prev = nid
         return True
-    except Exception:
+    except Exception as exc:
+        log.warning("Neo4j walkthrough mirror failed (non-fatal, graph view degraded): %s", exc)
         return False

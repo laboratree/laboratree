@@ -6,7 +6,6 @@ import uuid
 
 import pandas as pd
 from fastapi.testclient import TestClient
-
 from laboratree.core.registry import REGISTRY
 from laboratree.labs.insight.eda.profile import profile_dataframe
 from laboratree.main import app

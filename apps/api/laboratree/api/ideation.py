@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,7 @@ from ..core.deps import PrincipalDep, SessionDep
 from ..core.llm.context import use_llm_context
 from ..core.ratelimit import rate_limited
 from ..core.registry import REGISTRY
+from ..core.repro import dataframe_hash
 from ..core.search import research_available, research_search, search_available, web_search
 from ..core.storage import get_blob_store
 from ..labs.ideation import llm as ideation_llm
@@ -27,12 +29,13 @@ from ..labs.ideation.auto_experiment import (
     rank_results,
     summarize_results,
 )
-from ..core.repro import dataframe_hash
 from ..labs.ideation.coscientist import run_ideation
 from ..labs.ideation.data_hunt import hunt_datasets
 from ..labs.ideation.evidence import brainstorm, gather_evidence
 from ..labs.ideation.master_dataset import build_master
 from ..projects.models import Dataset, IdeationSession, IdeationStatus, Project
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["ideation"])
 
@@ -397,6 +400,7 @@ async def push_to_paper_lab(
             try:
                 await ingest_paper(session, paper, data, embed_fn=paper_llm.default_embed)
             except Exception as exc:
+                log.warning("push-to-paper-lab: ingest failed for %r: %s", title, exc)
                 paper.status = PaperStatus.FAILED
                 await session.commit()
                 skipped.append({"title": title, "reason": f"ingest failed: {exc}"})

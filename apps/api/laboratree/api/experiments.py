@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import logging
 import uuid
+from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -21,6 +23,8 @@ from ..labs.paper.experiment.demo import generate_demo_dataset
 from ..labs.paper.experiment.service import _paper_text, create_experiment, load_dataset_df
 from ..papers.models import Experiment, ExperimentStatus, Paper
 from ..projects.models import Dataset, GateStatus, GateTask
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["experiments"])
 
@@ -240,7 +244,9 @@ async def build_master_dataset(
             continue
         try:
             df = pd.read_csv(_io.BytesIO(get_blob_store().get(ds.storage_key)))
-        except Exception:
+        except Exception as exc:
+            log.warning("skipping dataset %r during master build — unreadable CSV: %s",
+                        f.get("name") or ds.id, exc)
             continue
         df.columns = [str(c).strip().lower() for c in df.columns]
         frames.append(df)
@@ -288,7 +294,7 @@ async def evidence_bundle(
     paper's claims (with their grounded quotes), every dataset's content hash, the pipeline,
     and every run with its provenance-locked Evidence values + repro manifest. Downloads as JSON."""
     import json as _json
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from fastapi import Response
 
@@ -354,7 +360,7 @@ async def evidence_bundle(
 
     bundle = {
         "bundle": "laboratree.evidence",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "paper": {"title": paper.title if paper else "", "filename": paper.filename if paper else ""},
         "paper_claims": claims,
         "datasets": datasets,
@@ -402,7 +408,9 @@ async def upload_experiment_data(
     try:
         df = pd.read_csv(io.BytesIO(data))
         n_rows, n_cols, chash = int(len(df)), int(df.shape[1]), dataframe_hash(df)
-    except Exception:
+    except Exception as exc:
+        log.warning("uploaded file %r is not parseable as CSV; storing without shape/hash: %s",
+                    file.filename, exc)
         n_rows = n_cols = None
         chash = ""
     ds = Dataset(org_id=principal.org_id, project_id=exp.project_id, name=name,

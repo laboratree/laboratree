@@ -7,10 +7,13 @@ fake success.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+
+log = logging.getLogger(__name__)
 
 CompleteFn = Callable[[str, str], str]
 
@@ -150,7 +153,9 @@ class DataFetchAgent:
             for _ in range(self.max_tries):
                 try:
                     res = resolver.try_fetch(ref)
-                except Exception:
+                except Exception as exc:
+                    log.info("resolver %s failed for ref %r: %s",
+                             type(resolver).__name__, getattr(ref, "name", ref), exc)
                     res = None
                 if res is not None:
                     return res
@@ -196,8 +201,8 @@ def extract_dataset_refs(text: str, complete_fn: CompleteFn | None = None) -> li
                             url=item.get("url") or None,
                             source=item.get("source") or None,
                         )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("LLM dataset-ref extraction failed; continuing without it: %s", exc)
 
     for url in _URL_RE.findall(text or ""):
         if any(url.lower().split("?")[0].endswith(ext) for ext in _DATA_EXT):

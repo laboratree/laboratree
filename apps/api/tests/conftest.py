@@ -9,7 +9,6 @@ os.environ.setdefault("OPENALEX_ENABLED", "false")
 os.environ.setdefault("SEMANTIC_SCHOLAR_ENABLED", "false")
 
 import pytest  # noqa: E402
-
 from laboratree.core.registry import discover  # noqa: E402
 
 

@@ -8,10 +8,13 @@ reproducibility manifest. If Docker or the image is unavailable, callers get a c
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 SANDBOX_IMAGE = os.getenv("LABORATREE_SANDBOX_IMAGE", "laboratree-sandbox:latest")
 
@@ -40,7 +43,8 @@ def is_available() -> bool:
         client.ping()
         client.images.get(SANDBOX_IMAGE)
         return True
-    except Exception:
+    except Exception as exc:
+        log.debug("sandbox unavailable (docker/image probe failed): %s", exc)
         return False
 
 
@@ -95,14 +99,14 @@ def run_code(
         except Exception as exc:
             try:
                 container.kill()
-            except Exception:
-                pass
+            except Exception as kill_exc:
+                log.debug("failed to kill sandbox container during cleanup: %s", kill_exc)
             raise SandboxUnavailable(f"sandbox run failed/timed out: {exc}") from exc
         finally:
             try:
                 container.remove(force=True)
-            except Exception:
-                pass
+            except Exception as rm_exc:
+                log.debug("failed to remove sandbox container during cleanup: %s", rm_exc)
 
         produced = sorted(
             p.name for p in work.iterdir() if p.is_file() and p.name != "main.py"

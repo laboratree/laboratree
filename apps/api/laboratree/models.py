@@ -1,6 +1,13 @@
 """Import-all module so Base.metadata sees every table (used by Alembic and app startup)."""
 
 from .core.db.orm import Base  # noqa: F401
+from .papers.models import (  # noqa: F401
+    Experiment,
+    ExperimentStatus,
+    Paper,
+    PaperChunk,
+    PaperStatus,
+)
 from .projects.models import (  # noqa: F401
     Artifact,
     Dataset,
@@ -13,13 +20,6 @@ from .projects.models import (  # noqa: F401
     Project,
     Run,
     RunStatus,
-)
-from .papers.models import (  # noqa: F401
-    Experiment,
-    ExperimentStatus,
-    Paper,
-    PaperChunk,
-    PaperStatus,
 )
 from .tenancy.models import Membership, Organization, Role, User  # noqa: F401
 

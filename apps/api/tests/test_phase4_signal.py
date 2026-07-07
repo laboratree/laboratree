@@ -8,14 +8,12 @@ import uuid
 import docx
 import pandas as pd
 from fastapi.testclient import TestClient
-
 from laboratree.core.registry import REGISTRY
 from laboratree.core.storage import get_blob_store
 from laboratree.labs.signal.consolidate import consolidate
-from laboratree.labs.signal.extract import extract_docx, extract_file
+from laboratree.labs.signal.extract import extract_docx
 from laboratree.main import app
 from laboratree_sdk import RunContext
-
 
 # ---------- fixtures (in-memory files) ----------
 

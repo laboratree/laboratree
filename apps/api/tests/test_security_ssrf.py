@@ -31,7 +31,6 @@ def test_allows_public_addresses():
 def test_safe_fetch_revalidates_redirect_targets(monkeypatch):
     """A public URL that redirects to an internal address must NOT be followed (redirect-SSRF)."""
     import httpx
-
     from laboratree.core import net
 
     class FakeResp:

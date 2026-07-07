@@ -9,6 +9,7 @@ Output workbook layout:
 from __future__ import annotations
 
 import io
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -16,6 +17,8 @@ from typing import Any
 import pandas as pd
 
 from .extract import ExtractedTable, extract_file
+
+log = logging.getLogger(__name__)
 
 _INVALID = re.compile(r"[\[\]:*?/\\]")
 
@@ -60,6 +63,7 @@ def consolidate(files: list[tuple[str, bytes]]) -> ConsolidationResult:
         try:
             res = extract_file(name, data)
         except Exception as exc:
+            log.warning("extraction failed for source %r during consolidation: %s", name, exc)
             errors.append({"source": name, "error": f"{type(exc).__name__}: {exc}"})
             continue
         tables.extend(res.tables)

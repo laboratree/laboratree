@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
-
 from laboratree.labs.collection.survey import (
     design_questionnaire,
     detect_bias,
@@ -19,7 +18,8 @@ def _fake(system: str, prompt: str, **kw) -> str:
     if "survey methodologist" in system:
         return '[{"text": "How satisfied are you?", "type": "likert"}, {"text": "Your age?", "type": "open"}]'
     if "audit survey questions" in system:
-        return '[{"question": "Do not you agree X is great?", "issue": "leading", "severity": "high", "suggestion": "rephrase neutrally"}]'
+        return ('[{"question": "Do not you agree X is great?", "issue": "leading", '
+                '"severity": "high", "suggestion": "rephrase neutrally"}]')
     if "simulate survey pilot" in system:
         return '[{"1": "yes", "2": "30"}, {"1": "no", "2": "45"}]'
     return "[]"

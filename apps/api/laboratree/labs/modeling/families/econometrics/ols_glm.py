@@ -10,7 +10,12 @@ from typing import Any
 
 from laboratree_sdk import Component, ComponentKind, ComponentSpec, Port, RunContext, register
 
-from ...evaluation.metrics import as_metric_dict, numeric_features, regression_metrics, sample_predictions
+from ...evaluation.metrics import (
+    as_metric_dict,
+    numeric_features,
+    regression_metrics,
+    sample_predictions,
+)
 
 _SEED = 1729
 

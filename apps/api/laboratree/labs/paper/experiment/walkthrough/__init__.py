@@ -7,8 +7,11 @@ Nodes: data -> preprocess -> eda -> model -> result -> inference. Model nodes ca
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 CompleteFn = Callable[[str, str], str]
 
@@ -303,4 +306,9 @@ def build_walkthrough(card: dict[str, Any], complete_fn: CompleteFn | None = Non
             steps.append(node)
         return _normalize_pipeline(steps or base, card)
     except Exception:
+        log.warning(
+            "LLM walkthrough build failed; falling back to the base pipeline "
+            "(user will see a generic pipeline, not the paper's steps)",
+            exc_info=True,
+        )
         return _normalize_pipeline(base, card)

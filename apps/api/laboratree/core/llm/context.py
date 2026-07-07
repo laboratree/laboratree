@@ -5,9 +5,9 @@ changing the many call-site signatures. Set it at an API/service boundary with `
 from __future__ import annotations
 
 import contextvars
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from collections.abc import Iterator
 
 
 @dataclass(frozen=True)

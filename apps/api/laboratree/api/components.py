@@ -7,7 +7,6 @@ appear here automatically with no code changes.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-
 from laboratree_sdk import ComponentKind
 from laboratree_sdk.registry import UnknownComponentError
 

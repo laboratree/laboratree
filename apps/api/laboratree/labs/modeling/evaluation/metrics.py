@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 def classification_metrics(y_true, y_pred, y_proba=None) -> dict[str, float]:
@@ -20,8 +23,8 @@ def classification_metrics(y_true, y_pred, y_proba=None) -> dict[str, float]:
             if len(classes) == 2:
                 proba = y_proba[:, 1] if getattr(y_proba, "ndim", 1) == 2 else y_proba
                 out["roc_auc"] = float(roc_auc_score(y_true, proba))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("roc_auc omitted (not computable for this target/proba): %s", exc)
     return out
 
 

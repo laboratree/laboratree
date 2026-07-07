@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi.testclient import TestClient
-
 from laboratree.core.registry import REGISTRY, discover
 from laboratree.main import app
 from laboratree_sdk import RunContext
