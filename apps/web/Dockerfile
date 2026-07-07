@@ -1,7 +1,8 @@
 # Laboratree web (Next.js) image.
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
+# .npmrc carries legacy-peer-deps=true (react-spring/lottie ship stale React<=18 peer ranges).
+COPY package.json package-lock.json* .npmrc* ./
 RUN npm install
 
 FROM node:22-alpine AS builder

@@ -15,7 +15,8 @@ echo "  API: http://localhost:${API_PORT}/health   Web: http://localhost:3000"
 echo
 
 echo "[1/3] Starting datastores (docker compose)..."
-docker compose -f "$ROOT/infra/docker-compose.yml" up -d \
+# Only the datastores — api/worker/web run locally below (uvicorn + npm), not in Docker.
+docker compose -f "$ROOT/infra/docker-compose.yml" up -d postgres redis neo4j mongodb \
   || echo "  (skipped — docker not running or stores already up; backend will use whatever is on those ports)"
 
 echo "[2/3] Starting backend (FastAPI, --reload)..."

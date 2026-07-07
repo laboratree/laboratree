@@ -25,7 +25,8 @@ echo   -----------------------------------------------------------------
 echo.
 
 echo [1/3] Starting datastores (docker compose)...
-docker compose -f "%ROOT%\infra\docker-compose.yml" up -d
+REM Only the datastores — api/worker/web run locally below (uvicorn + npm), not in Docker.
+docker compose -f "%ROOT%\infra\docker-compose.yml" up -d postgres redis neo4j mongodb
 if errorlevel 1 (
   echo   ^(Skipping — docker not running or stores already up. Backend will use whatever is on those ports.^)
 )
