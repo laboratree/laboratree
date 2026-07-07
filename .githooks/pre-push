@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Laboratree pre-push gate — run the backend test suite before code leaves the machine.
+# Kept out of pre-commit so day-to-day commits stay fast; tests run once, before a push.
+# Bypass once, intentionally and sparingly:  git push --no-verify
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+
+echo "[pre-push] pytest (apps/api)…"
+if ( cd "$root/apps/api" && uv run pytest -q ); then
+  echo "✓ pre-push checks passed."
+else
+  echo
+  echo "✗ pre-push failed — tests must pass before pushing."
+  echo "  (To bypass this once, intentionally:  git push --no-verify)"
+  exit 1
+fi
