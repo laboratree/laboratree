@@ -48,6 +48,8 @@ To scaffold a new Lab/Component, use the **`laboratree-scaffold`** skill in `.cl
 - Async everywhere in the API. Long/heavy work goes to Celery (`core/jobs`).
 - Theme = **light forest** (see `apps/web/tailwind.config.ts`): forest `#14342A`, leaf `#6DB33F`,
   bg `#FBFDF9`. Serif display (Lora) + Inter. Brand reports with the logo + tagline.
+- **Clean code:** follow the **`clean-code`** skill in `.claude/skills/` for every code change (naming,
+  single-responsibility, typed models over raw dicts, layer separation, error handling, pre-completion review).
 
 ## Tests
 `uv run pytest` (tests live in `apps/api/tests`).
