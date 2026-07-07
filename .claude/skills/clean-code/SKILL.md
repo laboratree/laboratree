@@ -35,10 +35,17 @@ cleaner than you found it (principle: refactor continuously).
    - **prompts** → keep LLM prompt text in a dedicated module/constant, not inline in orchestration logic.
    - **utils** → `core/` shared helpers. **config** → `core/settings`.
    Frontend mirror: API calls in `apps/web/lib/api.ts`, UI in `components/`, pages in `app/`.
-10. **Proper error handling.** Handle expected failures explicitly with actionable messages (see the
-    `readiness_reason` pattern). Raise typed HTTP errors from routers. The **only** allowed silent
-    `try/except` is fire-and-forget observability/telemetry that must never break a request — and it stays
-    narrow and commented (`# fail-open: logging must never break the request`).
+10. **Exception handling.** Handle expected failures explicitly with actionable messages (see the
+    `readiness_reason` pattern). Catch the **narrowest** exception you can handle — not bare `except Exception`
+    except at a top-level boundary (router, Celery task) that logs and converts it. Raise typed `HTTPException`s
+    from routers; define domain exception types instead of returning sentinels. **Preserve the cause** on re-raise
+    (`raise ... from err`). Clean up with context managers. The **only** allowed silent `try/except` is
+    fire-and-forget observability/telemetry that must never break a request — narrow and commented
+    (`# fail-open: logging must never break the request`).
+    - **Logging for debugging:** use a module logger / `ctx.logger` — never `print`. Log proactively so a run is
+      diagnosable from logs alone: start/end of a Component `run`, before/after external calls (LLM, fetch, DB) and
+      retries, and **every caught exception** (cause + context). Use levels deliberately (`DEBUG` diagnostics /
+      `INFO` milestones / `WARNING` handled-unexpected / `ERROR` failures). Never log secrets, API keys, or PII.
 11. **Minimal comments.** Explain *why*, not *what*. Delete narration. A comment that restates the code is noise.
 12. **Consistent structure.** Put a new file where its siblings live. Model families → `labs/modeling/<family>/`
     (`ml | dl_pytorch | econometrics | timeseries | anomaly`). Don't scatter related files.
@@ -71,7 +78,10 @@ Before considering a change complete, verify:
 - [ ] No magic values; model ids/keys/ports/thresholds come from `settings`/constants.
 - [ ] Data crossing module boundaries is a **typed model**, not a raw dict; signatures are fully typed; no stray `Any`.
 - [ ] Layers are separated (route ↔ service ↔ model ↔ schema ↔ prompt ↔ util); the file lives with its siblings.
-- [ ] Errors are handled explicitly with useful messages; no silent excepts except commented fail-open telemetry.
+- [ ] Exceptions: narrowest type caught where handleable, cause preserved on re-raise, domain/typed HTTP errors over
+      sentinels, resources cleaned up; no silent swallowing except commented fail-open telemetry.
+- [ ] Logging: `ctx.logger`/module logger (no `print`); proactive logs at run start/end, external calls, and every
+      caught exception (with context); correct levels; no secrets/keys/PII logged.
 - [ ] Dead code, unused imports, and commented-out blocks removed.
 - [ ] Every reported number flows through `ctx.emit` (provenance).
 - [ ] Tests updated/added; `cd apps/api && uv run pytest` green; `uv run ruff check` clean.
