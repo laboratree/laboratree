@@ -77,6 +77,18 @@ class Settings(BaseSettings):
     blob_backend: str = "local"
     blob_local_root: str = ""
 
+    # --- Transcription (Qual Studio; core/transcribe engine) ---
+    transcribe_provider: str = "openai"       # "openai" (any OpenAI-compatible audio API) | "none"
+    transcribe_model: str = "whisper-1"
+
+    # --- Outbound email (panel invitations; core/notify Mailer) ---
+    mail_provider: str = "console"            # "console" (log only) | "smtp"
+    mail_from: str = "Laboratree <no-reply@localhost>"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+
     # --- Web search (dataset + evidence discovery; used by the fetch agent & Ideation Lab) ---
     # Keys live only in the gitignored .env. Provider order: brave first, serpapi fallback.
     web_search_provider: str = "brave"        # "brave" | "serpapi" | "none"

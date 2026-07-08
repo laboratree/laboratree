@@ -1,6 +1,27 @@
 """Import-all module so Base.metadata sees every table (used by Alembic and app startup)."""
 
+from .coding.models import (  # noqa: F401
+    Codebook,
+    CodebookStatus,
+)
 from .core.db.orm import Base  # noqa: F401
+from .fieldwork.models import (  # noqa: F401
+    Quota,
+    ResponseStatus,
+    Survey,
+    SurveyResponse,
+    SurveyStatus,
+)
+from .media.models import (  # noqa: F401
+    MediaAsset,
+    MediaStatus,
+)
+from .panel.models import (  # noqa: F401
+    ConsentRecord,
+    Invitation,
+    InvitationStatus,
+    Respondent,
+)
 from .papers.models import (  # noqa: F401
     Experiment,
     ExperimentStatus,
@@ -45,4 +66,17 @@ __all__ = [
     "IdeationSession",
     "IdeationStatus",
     "LLMCall",
+    "Survey",
+    "SurveyStatus",
+    "SurveyResponse",
+    "ResponseStatus",
+    "Quota",
+    "Respondent",
+    "ConsentRecord",
+    "Invitation",
+    "InvitationStatus",
+    "MediaAsset",
+    "MediaStatus",
+    "Codebook",
+    "CodebookStatus",
 ]

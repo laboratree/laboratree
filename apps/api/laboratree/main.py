@@ -18,14 +18,19 @@ from .api import (
     gates,
     health,
     ideation,
+    media,
     observability,
     orgs,
+    panel,
     papers,
     pipeline,
     projects,
+    public_survey,
+    qual,
     reports,
     runs,
     signal,
+    surveys,
 )
 from .core.config import settings
 from .core.db import mongo, neo4j, postgres, redis
@@ -79,6 +84,11 @@ app.include_router(reports.router)
 app.include_router(collection.router)
 app.include_router(pipeline.router)
 app.include_router(observability.router)
+app.include_router(surveys.router)
+app.include_router(public_survey.router)
+app.include_router(panel.router)
+app.include_router(media.router)
+app.include_router(qual.router)
 app.include_router(components.router)
 
 
