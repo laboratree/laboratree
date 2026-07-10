@@ -1181,3 +1181,17 @@ and **two pre-configured end-to-end templates**: *Research firm* (client brief �
 survey → analysis → recommendation, 20 stages) and *Policy research* (policy problem → ToC →
 evaluation → CBA → brief → M&E, 19 stages) in `apps/web/lib/pipelineTemplates.ts`. Lab-tab
 consolidation shipped alongside: Trend + Decision are tools inside Insight (fewer top-level tabs).
+
+## A4. Sophisticated market-research firm (NielsenIQ/Ipsos-class) — integration deltas (2026-07-08)
+The 20-stage modern MR workflow maps onto existing Labs/phases; its pipeline template gained a
+"Market & competitor scan" stage and a "Post-launch tracking" stage (shipped). Genuinely NEW
+backlog items it exposes: **TURF analysis** (joins conjoint/MaxDiff), **factor analysis / ANOVA /
+SEM** components (Analytics depth), **feature-engineering library** (CLV, RFM, loyalty/churn
+scores — Data Lab depth), **behavioral-data connectors** (retail scanner, CRM, web/app analytics,
+social listening — commercial-connector tier of the existing connectors backlog), **pricing/
+demand/market-share simulation depth** (price elasticity, Bass adoption — ties into Persona Lab
+A1's behavioral models and the Simulation depth in A2), and **continuous tracking studies**
+(post-launch measurement = the tracker-waves backlog item, U9). The 10-Lab modular structure
+proposed (Project/Knowledge/Survey/Persona/Fieldwork/Data/Analytics/Simulation/Insight/
+Presentation) is a naming view over the same 16-Lab architecture — no structural change; Project
+Lab = the project-ops + client-portal backlog item.
