@@ -21,6 +21,7 @@ const CollectionLab = dyn(() => import("@/components/CollectionLab"));
 const FieldLab = dyn(() => import("@/components/FieldLab"));
 const PanelLab = dyn(() => import("@/components/PanelLab"));
 const QualLab = dyn(() => import("@/components/QualLab"));
+const DeliverablesLab = dyn(() => import("@/components/DeliverablesLab"));
 const PipelineLab = dyn(() => import("@/components/PipelineLab"));
 const LlmActivity = dyn(() => import("@/components/LlmActivity"));
 
@@ -33,6 +34,7 @@ const TABS = [
   { key: "signal", label: "Signal Lab" },
   { key: "insight", label: "Insight Lab" },
   { key: "papers", label: "Paper Lab" },
+  { key: "deliver", label: "Deliverables" },
   { key: "pipeline", label: "Pipeline" },
   { key: "llm", label: "LLM Activity" },
 ] as const;
@@ -120,6 +122,7 @@ export default function ProjectWorkspace() {
         {tab === "signal" && <SignalLab projectId={projectId} />}
         {tab === "insight" && <InsightLab projectId={projectId} />}
         {tab === "papers" && <PapersLab projectId={projectId} />}
+        {tab === "deliver" && <DeliverablesLab projectId={projectId} />}
         {tab === "pipeline" && <PipelineLab projectId={projectId} />}
         {tab === "llm" && <LlmActivity projectId={projectId} />}
       </div>

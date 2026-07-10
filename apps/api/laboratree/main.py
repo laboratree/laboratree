@@ -14,6 +14,7 @@ from .api import (
     collection,
     components,
     datasets,
+    deliverables,
     experiments,
     gates,
     health,
@@ -89,6 +90,8 @@ app.include_router(public_survey.router)
 app.include_router(panel.router)
 app.include_router(media.router)
 app.include_router(qual.router)
+app.include_router(deliverables.router)
+app.include_router(deliverables.public_router)
 app.include_router(components.router)
 
 

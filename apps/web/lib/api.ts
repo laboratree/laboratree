@@ -1311,6 +1311,41 @@ export const qualApi = {
   synthesis: (projectId: string) => apiGet<ThemeMatrix>(`/api/projects/${projectId}/qual/synthesis`),
 };
 
+// ---------------- Deliverables Studio ----------------
+export type ReportBlock = {
+  type: "heading" | "text" | "methodology" | "stat" | "table" | "chart" | "quote";
+  text?: string;
+  evidence_id?: string;
+  caption?: string;
+};
+export type Report = {
+  id: string;
+  project_id: string;
+  title: string;
+  blocks: ReportBlock[];
+  share_token: string | null;
+  created_at: string;
+};
+export type ReportEvidence = {
+  id: string;
+  label: string;
+  kind: string;
+  value: unknown;
+  run_id: string | null;
+};
+
+export const deliverablesApi = {
+  list: (projectId: string) => apiGet<Report[]>(`/api/projects/${projectId}/reports`),
+  create: (projectId: string) => apiPost<Report>(`/api/projects/${projectId}/reports`),
+  get: (reportId: string) => apiGet<Report>(`/api/reports/${reportId}`),
+  save: (reportId: string, body: { title?: string; blocks?: ReportBlock[] }) =>
+    apiPatch<Report>(`/api/reports/${reportId}`, body),
+  evidence: (projectId: string) => apiGet<ReportEvidence[]>(`/api/projects/${projectId}/evidence`),
+  renderUrl: (reportId: string) => `${API_URL}/api/reports/${reportId}/render`,
+  share: (reportId: string) => apiPost<{ token: string; path: string }>(`/api/reports/${reportId}/share`),
+  unshare: (reportId: string) => apiPost<{ status: string }>(`/api/reports/${reportId}/unshare`),
+};
+
 // ---------------- public survey runtime (NO auth) ----------------
 async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {

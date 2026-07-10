@@ -5,6 +5,7 @@ from .coding.models import (  # noqa: F401
     CodebookStatus,
 )
 from .core.db.orm import Base  # noqa: F401
+from .deliverables.models import Report  # noqa: F401
 from .fieldwork.models import (  # noqa: F401
     Quota,
     ResponseStatus,
@@ -79,4 +80,5 @@ __all__ = [
     "MediaStatus",
     "Codebook",
     "CodebookStatus",
+    "Report",
 ]
