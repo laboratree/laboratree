@@ -51,21 +51,31 @@ class PhaseResult:
     evidence: int = 0
     artifacts: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    lab: str = ""                                  # which Lab agent owns this phase
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"id": self.stage_id, "status": self.status, "summary": self.summary,
+                "run_id": self.run_id, "evidence": self.evidence,
+                "artifacts": self.artifacts, "error": self.error, "lab": self.lab}
 
 
 PhaseExecutor = Callable[[FlowContext], Awaitable[PhaseResult]]
 
-_EXECUTORS: dict[tuple[str, str], PhaseExecutor] = {}
+_EXECUTORS: dict[tuple[str, str], tuple[PhaseExecutor, str]] = {}
 
 
-def phase(flow_key: str, stage_id: str) -> Callable[[PhaseExecutor], PhaseExecutor]:
-    """Register an executor for one stage of one flow."""
+def phase(flow_key: str, stage_id: str, *, lab: str = "") -> Callable[[PhaseExecutor], PhaseExecutor]:
+    """Register an executor for one stage of one flow, tagged with its owning Lab agent."""
 
     def _wrap(fn: PhaseExecutor) -> PhaseExecutor:
-        _EXECUTORS[(flow_key, stage_id)] = fn
+        _EXECUTORS[(flow_key, stage_id)] = (fn, lab)
         return fn
 
     return _wrap
+
+
+def get_executor(flow_key: str, stage_id: str) -> tuple[PhaseExecutor, str] | None:
+    return _EXECUTORS.get((flow_key, stage_id))
 
 
 def registered_stages(flow_key: str) -> list[str]:
@@ -98,11 +108,12 @@ async def run_flow(
     ctx = FlowContext(session=session, org_id=org_id, project_id=project_id, flow_run=flow_run)
     results: list[PhaseResult] = []
     for stage_id in stage_ids:
-        executor = _EXECUTORS.get((flow_key, stage_id))
-        if executor is None:
+        entry = _EXECUTORS.get((flow_key, stage_id))
+        if entry is None:
             results.append(PhaseResult(stage_id=stage_id, status="skipped",
                                        summary="no executor registered — do this stage by hand"))
             continue
+        executor, lab = entry
         started = time.monotonic()
         try:
             result = await executor(ctx)
@@ -110,6 +121,7 @@ async def run_flow(
             log.exception("flow %s phase %s failed", flow_key, stage_id)
             await session.rollback()
             result = PhaseResult(stage_id=stage_id, status="failed", error=str(exc)[:300])
+        result.lab = result.lab or lab
         result.artifacts.setdefault("duration_ms", round((time.monotonic() - started) * 1000))
         results.append(result)
         log.info("flow %s phase %-14s -> %s (%s)", flow_key, stage_id, result.status,
@@ -124,14 +136,11 @@ async def run_flow(
         "flow_key": flow_key,
         "flow_run_id": str(flow_run.id),
         "status": flow_run.status.value,
-        "stages": [
-            {"id": r.stage_id, "status": r.status, "summary": r.summary, "run_id": r.run_id,
-             "evidence": r.evidence, "artifacts": r.artifacts, "error": r.error}
-            for r in results
-        ],
+        "stages": [r.as_dict() for r in results],
         "gates_opened": sum(1 for r in results if r.status == "gated"),
         "evidence_total": sum(r.evidence for r in results),
     }
 
 
-__all__ = ["FlowContext", "PhaseResult", "phase", "registered_stages", "open_gate", "run_flow"]
+__all__ = ["FlowContext", "PhaseResult", "phase", "get_executor", "registered_stages",
+           "open_gate", "run_flow"]

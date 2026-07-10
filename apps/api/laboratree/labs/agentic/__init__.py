@@ -66,3 +66,43 @@ class AgentReason(Component):
                      basis=str(finding.get("basis", ""))[:500])
         return {"findings": findings, "summary": str(parsed.get("summary", ""))[:1000],
                 "model": model, "n_findings": len(findings)}
+
+
+@register
+class DeepFindings(Component):
+    """Evidence-locks findings a deep agent already produced (deterministic — no LLM here).
+
+    The ReAct loop reasons and calls tools; THIS component is how its conclusions enter the
+    Evidence Ledger as a tracked run, so deep-agent output carries provenance like everything else.
+    """
+
+    spec = ComponentSpec(
+        kind=ComponentKind.ANALYZER,
+        id="agent.deep_findings",
+        name="Deep-agent findings",
+        summary="Records a deep agent's findings as Evidence (claims with model + basis).",
+        params_schema={
+            "type": "object",
+            "required": ["findings", "summary"],
+            "properties": {
+                "findings": {"type": "array", "title": "Findings [{claim, basis}]"},
+                "summary": {"type": "string"},
+                "model": {"type": "string"},
+            },
+        },
+        inputs=[],
+        outputs=[Port(name="findings", dtype="metrics")],
+        tags=["agent", "deep-agent"],
+    )
+
+    def run(self, ctx: RunContext) -> dict[str, Any]:
+        findings = [f for f in (ctx.params.get("findings") or []) if isinstance(f, dict)]
+        findings = findings[:MAX_FINDINGS]
+        model = str(ctx.params.get("model") or "")
+        for i, finding in enumerate(findings, start=1):
+            ctx.emit(f"deep_finding_{i}", str(finding.get("claim", ""))[:500],
+                     kind="claim", component=self.spec.id, model=model,
+                     basis=str(finding.get("basis", ""))[:500])
+        summary = str(ctx.params.get("summary", ""))[:1000]
+        ctx.emit("deep_agent_summary", summary, kind="claim", component=self.spec.id, model=model)
+        return {"summary": summary, "n_findings": len(findings), "model": model}

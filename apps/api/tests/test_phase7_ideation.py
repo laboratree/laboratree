@@ -156,6 +156,9 @@ def test_research_search_falls_back_to_web(monkeypatch):
     monkeypatch.setattr(S, "openalex_search", lambda q, n: [
         S.SearchHit(title="Paper", url="https://doi.org/x", description="abstract", source="openalex")
     ])
+    # keep the test hermetic: the other scholarly providers contribute nothing here
+    monkeypatch.setattr(S, "semantic_scholar_search", lambda q, n: [])
+    monkeypatch.setattr(S, "arxiv_search", lambda q, n: [])
     monkeypatch.setattr(S, "web_search", lambda q, n=None: [
         S.SearchHit(title="Web", url="https://example.org/w", description="", source="brave")
     ])

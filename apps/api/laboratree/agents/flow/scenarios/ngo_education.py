@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -47,6 +48,11 @@ async def _ensure_dataset(ctx: FlowContext) -> pd.DataFrame:
 
 
 async def _ensure_survey(ctx: FlowContext) -> Survey:
+    if "survey" not in ctx.state and ctx.state.get("survey_id"):
+        # supervised runs rehydrate across checkpoints — reload rather than recreate
+        existing = await ctx.session.get(Survey, uuid.UUID(str(ctx.state["survey_id"])))
+        if existing is not None:
+            ctx.state["survey"] = existing
     if "survey" not in ctx.state:
         from ....api.surveys import PUBLIC_TOKEN_BYTES, _structure_hash  # noqa: PLC0415
 
@@ -68,6 +74,7 @@ async def _ensure_survey(ctx: FlowContext) -> Survey:
         ctx.session.add(survey)
         await ctx.session.flush()
         ctx.state["survey"] = survey
+    ctx.state["survey_id"] = str(ctx.state["survey"].id)
     return ctx.state["survey"]
 
 
@@ -93,7 +100,7 @@ async def _intake_deterministic(ctx: FlowContext) -> PhaseResult:
                                   "brief parsed: mission, budget, timeline, target extracted")
 
 
-@phase(FLOW_KEY, "intake")
+@phase(FLOW_KEY, "intake", lab="signal")
 async def intake(ctx: FlowContext) -> PhaseResult:
     await _ensure_dataset(ctx)  # so the agent has real material to reason over
     return await agentic_phase(
@@ -103,7 +110,7 @@ async def intake(ctx: FlowContext) -> PhaseResult:
         _intake_deterministic)
 
 
-@phase(FLOW_KEY, "stakeholders")
+@phase(FLOW_KEY, "stakeholders", lab="ideation")
 async def stakeholders(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(ctx, "stakeholders", "demo.stakeholder_map", {}, "demo",
                                   "stakeholder influence chain mapped")
@@ -120,12 +127,12 @@ async def _research_frame(ctx: FlowContext, stage_id: str, summary: str) -> Phas
     return result
 
 
-@phase(FLOW_KEY, "background")
+@phase(FLOW_KEY, "background", lab="ideation")
 async def background(ctx: FlowContext) -> PhaseResult:
     return await _research_frame(ctx, "background", "dropout drivers framed from the data")
 
 
-@phase(FLOW_KEY, "questions")
+@phase(FLOW_KEY, "questions", lab="ideation")
 async def questions(ctx: FlowContext) -> PhaseResult:
     return await _research_frame(ctx, "questions", "research questions defined")
 
@@ -134,7 +141,7 @@ async def _hypotheses_deterministic(ctx: FlowContext) -> PhaseResult:
     return await _research_frame(ctx, "hypotheses", "H1-H3 stated and tested against the data")
 
 
-@phase(FLOW_KEY, "hypotheses")
+@phase(FLOW_KEY, "hypotheses", lab="ideation")
 async def hypotheses(ctx: FlowContext) -> PhaseResult:
     await _ensure_dataset(ctx)
     result = await agentic_phase(
@@ -153,7 +160,7 @@ async def hypotheses(ctx: FlowContext) -> PhaseResult:
 
 # ----------------------------- design + personas + field -----------------------------
 
-@phase(FLOW_KEY, "design")
+@phase(FLOW_KEY, "design", lab="collection")
 async def design(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(
         ctx, "design", "tool.sample_size",
@@ -161,7 +168,7 @@ async def design(ctx: FlowContext) -> PhaseResult:
         "Cochran sample size computed for the target population")
 
 
-@phase(FLOW_KEY, "personas")
+@phase(FLOW_KEY, "personas", lab="personas")
 async def personas(ctx: FlowContext) -> PhaseResult:
     from ....api.personas import execute_wave  # noqa: PLC0415
 
@@ -188,7 +195,7 @@ async def personas(ctx: FlowContext) -> PhaseResult:
                        artifacts={"cohort_id": str(cohort.id), "wave": wave.get("wave")})
 
 
-@phase(FLOW_KEY, "questionnaire")
+@phase(FLOW_KEY, "questionnaire", lab="field")
 async def questionnaire(ctx: FlowContext) -> PhaseResult:
     survey = await _ensure_survey(ctx)
     return PhaseResult(stage_id="questionnaire", status="succeeded",
@@ -197,7 +204,7 @@ async def questionnaire(ctx: FlowContext) -> PhaseResult:
                                   "public_url": f"/s/{survey.public_token}"})
 
 
-@phase(FLOW_KEY, "field")
+@phase(FLOW_KEY, "field", lab="field")
 async def field(ctx: FlowContext) -> PhaseResult:
     from ....api.demo import _synthetic_completes  # noqa: PLC0415
 
@@ -213,26 +220,26 @@ async def field(ctx: FlowContext) -> PhaseResult:
 
 # ----------------------------- analyze -----------------------------
 
-@phase(FLOW_KEY, "clean")
+@phase(FLOW_KEY, "clean", lab="data")
 async def clean(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(ctx, "clean", "transform.mean_impute", {}, "data",
                                   "missing values imputed")
 
 
-@phase(FLOW_KEY, "eda")
+@phase(FLOW_KEY, "eda", lab="insight")
 async def eda(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(ctx, "eda", "analyzer.eda_profile", {}, "insight",
                                   "distributions, missingness, correlations profiled")
 
 
-@phase(FLOW_KEY, "crosstab")
+@phase(FLOW_KEY, "crosstab", lab="tabulation")
 async def crosstab(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(ctx, "crosstab", "analyzer.crosstab",
                                   {"banner": "gender", "stub": "dropout"}, "tabulation",
                                   "dropout x gender crosstab with significance letters")
 
 
-@phase(FLOW_KEY, "model")
+@phase(FLOW_KEY, "model", lab="modeling")
 async def model(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(ctx, "model", "model.ml.logistic_regression",
                                   {"target": "dropout"}, "modeling",
@@ -241,7 +248,7 @@ async def model(ctx: FlowContext) -> PhaseResult:
 
 # ----------------------------- decide -----------------------------
 
-@phase(FLOW_KEY, "prioritize")
+@phase(FLOW_KEY, "prioritize", lab="decision")
 async def prioritize(ctx: FlowContext) -> PhaseResult:
     options = [
         {"label": "Free bicycles (transport)", "value": 0.75, "probability": 0.85},
@@ -253,7 +260,7 @@ async def prioritize(ctx: FlowContext) -> PhaseResult:
                                   "interventions ranked by expected value")
 
 
-@phase(FLOW_KEY, "intervention")
+@phase(FLOW_KEY, "intervention", lab="decision")
 async def intervention(ctx: FlowContext) -> PhaseResult:
     # genuinely human: designing the portfolio is judgment — the flow opens a real gate
     return await open_gate(
@@ -266,7 +273,7 @@ async def intervention(ctx: FlowContext) -> PhaseResult:
     )
 
 
-@phase(FLOW_KEY, "pilot")
+@phase(FLOW_KEY, "pilot", lab="field")
 async def pilot(ctx: FlowContext) -> PhaseResult:
     from ....api.demo import _store_dataset  # noqa: PLC0415
 
@@ -281,7 +288,7 @@ async def pilot(ctx: FlowContext) -> PhaseResult:
 
 # ----------------------------- impact + deliver -----------------------------
 
-@phase(FLOW_KEY, "impact")
+@phase(FLOW_KEY, "impact", lab="impact")
 async def impact(ctx: FlowContext) -> PhaseResult:
     if "pilot_df" not in ctx.state:
         await pilot(ctx)  # ensure the panel exists even in a reordered flow
@@ -292,7 +299,7 @@ async def impact(ctx: FlowContext) -> PhaseResult:
         dataset=ctx.state["pilot_df"])
 
 
-@phase(FLOW_KEY, "recommend")
+@phase(FLOW_KEY, "recommend", lab="deliverables")
 async def recommend(ctx: FlowContext) -> PhaseResult:
     from ....api.demo import _build_report  # noqa: PLC0415
 
@@ -304,7 +311,7 @@ async def recommend(ctx: FlowContext) -> PhaseResult:
                        artifacts={"report_id": str(report.id)})
 
 
-@phase(FLOW_KEY, "monitor")
+@phase(FLOW_KEY, "monitor", lab="deliverables")
 async def monitor(ctx: FlowContext) -> PhaseResult:
     share_path = ctx.state.get("share_path")
     if not share_path:
