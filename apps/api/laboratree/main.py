@@ -24,6 +24,7 @@ from .api import (
     orgs,
     panel,
     papers,
+    personas,
     pipeline,
     projects,
     public_survey,
@@ -88,6 +89,7 @@ app.include_router(observability.router)
 app.include_router(surveys.router)
 app.include_router(public_survey.router)
 app.include_router(panel.router)
+app.include_router(personas.router)
 app.include_router(media.router)
 app.include_router(qual.router)
 app.include_router(deliverables.router)

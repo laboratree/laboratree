@@ -68,6 +68,44 @@ def simulate_persona(
     }
 
 
+def _memory_block(persona: dict[str, Any]) -> str:
+    """Summarise a persona's prior survey waves so its new answers stay consistent."""
+    memory = persona.get("memory") or []
+    if not memory:
+        return ""
+    lines = []
+    for episode in memory[-3:]:  # last few waves are enough context
+        answers = episode.get("answers") or {}
+        summary = ", ".join(f"{k}={v}" for k, v in list(answers.items())[:8])
+        lines.append(f"- wave {episode.get('wave', '?')}: {summary}")
+    return "Your past answers (stay consistent with these):\n" + "\n".join(lines) + "\n\n"
+
+
+def simulate_persona_wave(
+    structure: dict[str, Any], persona: dict[str, Any], complete_fn: CompleteFn
+) -> dict[str, Any]:
+    """Simulate a *persisted* persona taking a survey, conditioned on its bio + prior waves."""
+    bio = persona.get("bio") or describe(persona)
+    prompt = (
+        f"You are this respondent: {bio}\n\n"
+        f"{_memory_block(persona)}"
+        f"Survey questions:\n{_questions_block(structure)}\n\n"
+        "Take the survey now, in character and consistent with your past answers."
+    )
+    try:
+        parsed = loads_lenient(complete_fn(_SYSTEM, prompt))
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        log.warning("persona wave parse failed for %s: %s", persona.get("handle"), exc)
+        parsed = None
+    if not isinstance(parsed, dict):
+        return {"answers": {}, "confusions": [], "dropped_at": None}
+    return {
+        "answers": parsed.get("answers") if isinstance(parsed.get("answers"), dict) else {},
+        "confusions": parsed.get("confusions") if isinstance(parsed.get("confusions"), list) else [],
+        "dropped_at": parsed.get("dropped_at") or None,
+    }
+
+
 def aggregate_dry_run(
     structure: dict[str, Any], results: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -117,4 +155,4 @@ def aggregate_dry_run(
     }
 
 
-__all__ = ["CompleteFn", "simulate_persona", "aggregate_dry_run"]
+__all__ = ["CompleteFn", "simulate_persona", "simulate_persona_wave", "aggregate_dry_run"]

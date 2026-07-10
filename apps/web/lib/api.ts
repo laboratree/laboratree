@@ -1311,6 +1311,37 @@ export const qualApi = {
   synthesis: (projectId: string) => apiGet<ThemeMatrix>(`/api/projects/${projectId}/qual/synthesis`),
 };
 
+// ---------------- Persona Lab ----------------
+export type PersonaCohort = {
+  id: string;
+  project_id: string;
+  name: string;
+  n: number;
+  waves: number;
+  margins: Record<string, Record<string, number>>;
+  created_at: string;
+};
+export type PersonaRow = {
+  id: string;
+  handle: string;
+  attributes: Record<string, string>;
+  traits: Record<string, number>;
+  bio: string;
+  memory_waves: number;
+};
+
+export const personasApi = {
+  cohorts: (projectId: string) =>
+    apiGet<PersonaCohort[]>(`/api/projects/${projectId}/persona-cohorts`),
+  createCohort: (projectId: string, name: string, n: number, margins: Record<string, Record<string, number>>) =>
+    apiPost<PersonaCohort>(`/api/projects/${projectId}/persona-cohorts`, { name, n, margins }),
+  personas: (cohortId: string) => apiGet<PersonaRow[]>(`/api/persona-cohorts/${cohortId}`),
+  runWave: (cohortId: string, surveyId: string) =>
+    apiPost<TwinDryRunReport & { wave: number }>(`/api/persona-cohorts/${cohortId}/run`, {
+      survey_id: surveyId,
+    }),
+};
+
 // ---------------- Deliverables Studio ----------------
 export type ReportBlock = {
   type: "heading" | "text" | "methodology" | "stat" | "table" | "chart" | "quote";

@@ -30,6 +30,7 @@ from .papers.models import (  # noqa: F401
     PaperChunk,
     PaperStatus,
 )
+from .personas.models import Persona, PersonaCohort  # noqa: F401
 from .projects.models import (  # noqa: F401
     Artifact,
     Dataset,
@@ -81,4 +82,6 @@ __all__ = [
     "Codebook",
     "CodebookStatus",
     "Report",
+    "PersonaCohort",
+    "Persona",
 ]
