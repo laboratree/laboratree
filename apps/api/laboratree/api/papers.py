@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from ..core.deps import Principal, PrincipalDep, SessionDep, require_role
-from ..tenancy.models import Role
 from ..core.llm.context import use_llm_context
 from ..core.storage import get_blob_store
 from ..labs.paper import llm as paper_llm
@@ -22,6 +21,7 @@ from ..labs.paper.rag import retrieve
 from ..labs.paper.simplify import simplify as simplify_text
 from ..papers.models import Paper, PaperChunk, PaperStatus
 from ..projects.models import Project
+from ..tenancy.models import Role
 
 router = APIRouter(prefix="/api", tags=["papers"])
 
@@ -150,12 +150,77 @@ async def make_card(
     if paper.card and not regenerate:
         return paper
     text = await _paper_text(session, paper)
+
+    def _is_empty(c: dict) -> bool:
+        return not (c.get("models_used") or (c.get("problem_statement") or {}).get("one_liner")
+                    or c.get("segments"))
+
     with use_llm_context("paper", "card", project_id=paper.project_id, org_id=principal.org_id):
-        paper.card = generate_card(text, complete_fn=paper_llm.default_complete)
+        card = generate_card(text, complete_fn=paper_llm.default_complete)
+        if _is_empty(card):  # truncated/unparseable output — one retry before giving up
+            card = generate_card(text, complete_fn=paper_llm.default_complete)
+    if _is_empty(card):
+        # NEVER overwrite a good card with an empty shell
+        raise HTTPException(
+            status_code=502,
+            detail="card generation returned no usable content — the previous card was kept; "
+            "please try again",
+        )
+
+    # grounding pass: link every checkable claim back to the paper text (deterministic, no LLM) —
+    # the UI turns these into "✓ verified in paper" badges, and honest absence for the rest.
+    from ..labs.paper.card.grounding import ground_card
+
+    chunk_rows = (
+        await session.execute(
+            select(PaperChunk).where(PaperChunk.paper_id == paper.id).order_by(PaperChunk.ordinal)
+        )
+    ).scalars().all()
+    card["grounding"] = ground_card(card, [(c.ordinal, c.text) for c in chunk_rows])
+
+    paper.card = card
     paper.status = PaperStatus.CARDED
     await session.commit()
     await session.refresh(paper)
     return paper
+
+
+def _share_token(paper_id: uuid.UUID) -> str:
+    import hashlib
+    import hmac as _hmac
+
+    from ..core.config import settings
+
+    return _hmac.new(
+        settings.secret_key.encode(), f"share:paper:{paper_id}".encode(), hashlib.sha256
+    ).hexdigest()[:32]
+
+
+@router.post("/papers/{paper_id}/share")
+async def share_paper(
+    paper_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+) -> dict[str, str]:
+    """Mint the paper's shareable read-only report link (stateless HMAC token — no expiry v1)."""
+    paper = await _require_paper(session, principal, paper_id)
+    return {"path": f"/share/paper/{paper.id}?t={_share_token(paper.id)}"}
+
+
+@router.get("/share/paper/{paper_id}")
+async def shared_paper(paper_id: uuid.UUID, t: str, session: SessionDep) -> dict:
+    """PUBLIC read-only payload for the shared report page — the token is the authorization."""
+    import hmac as _hmac
+
+    if not _hmac.compare_digest(t or "", _share_token(paper_id)):
+        raise HTTPException(status_code=404, detail="invalid share link")
+    paper = await session.get(Paper, paper_id)
+    if paper is None or not paper.card:
+        raise HTTPException(status_code=404, detail="paper not found")
+    return {
+        "title": paper.title,
+        "filename": paper.filename,
+        "card": paper.card,
+        "created_at": str(paper.created_at),
+    }
 
 
 @router.post("/papers/{paper_id}/simplify")

@@ -62,6 +62,80 @@ def tree_path(t, feats, row):
     return steps
 
 
+def _impurity(vals, task):
+    """The 'mix-up score' a split tries to reduce: gini (classification) or MSE (regression)."""
+    import numpy as np
+
+    if len(vals) == 0:
+        return 0.0
+    if task == "classification":
+        _, counts = np.unique(vals, return_counts=True)
+        p = counts / counts.sum()
+        return float(1.0 - float((p * p).sum()))
+    return float(((vals - vals.mean()) ** 2).mean())
+
+
+def _split_scan(Xtr, ytr, feats, task, chosen_feature, n_thresholds=24):
+    """Root-split threshold scan — the raw material for the 'how a split is chosen' animation.
+
+    For the feature the fitted tree actually asked about first (plus the 2 next-best features by
+    single-split gain), sweep ~24 evenly-spaced candidate thresholds and score each: the weighted
+    child impurity, the gain vs the parent, and the left/right row counts. Cheap by construction
+    (<=32 features x 24 cuts on the training rows)."""
+    import numpy as np
+
+    if chosen_feature is None:
+        return None
+    yv = np.asarray(ytr, dtype=float)
+    n = len(yv)
+    if n < 4:
+        return None
+    parent = _impurity(yv, task)
+    sweep = list(feats[:32])
+    if chosen_feature not in sweep:
+        sweep = [chosen_feature, *sweep[:31]]
+    scanned = []
+    for f in sweep:
+        x = np.asarray(Xtr[f], dtype=float)
+        lo, hi = float(x.min()), float(x.max())
+        if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+            continue
+        cands = []
+        for t_ in np.linspace(lo, hi, n_thresholds + 2)[1:-1]:  # interior cut-points only
+            mask = x <= t_
+            nl = int(mask.sum())
+            nr = n - nl
+            imp = parent if nl == 0 or nr == 0 else (
+                nl * _impurity(yv[mask], task) + nr * _impurity(yv[~mask], task)
+            ) / n
+            cands.append({
+                "t": round(float(t_), 4),
+                "impurity": round(float(imp), 5),
+                "gain": round(float(parent - imp), 5),
+                "n_left": nl,
+                "n_right": nr,
+            })
+        if not cands:
+            continue
+        best = max(cands, key=lambda c: c["gain"])
+        scanned.append({
+            "feature": f, "candidates": cands,
+            "best_t": best["t"], "best_gain": best["gain"],
+        })
+    chosen = [s for s in scanned if s["feature"] == chosen_feature]
+    if not chosen:
+        return None
+    runners_up = sorted(
+        (s for s in scanned if s["feature"] != chosen_feature),
+        key=lambda s: -s["best_gain"],
+    )[:2]
+    return {
+        "parent_impurity": round(parent, 5),
+        "features": chosen + runners_up,  # chosen first, then the best runners-up
+        "chosen_feature": chosen_feature,
+    }
+
+
 def _fit_boosting(Xtr, ytr, task, n_rounds, lr):
     """A tiny REAL gradient-boosting ensemble (depth-2 trees) so the animation can show the actual
     additive mechanics: baseline -> tree1 -> +tree2 -> … -> score. Binary/regression only (multiclass
@@ -98,14 +172,41 @@ def trace_trees(X, y, feats, target, task, labels, params=None) -> ModelTrace:
     t = tree.tree_
     show = feats[:24]  # the testing table shows every feature (scrolls horizontally)
 
+    # how the ROOT split was chosen — sweep candidate thresholds on the winning feature + runners-up
+    root_feature = (
+        feats[int(t.feature[0])] if int(t.children_left[0]) != int(t.children_right[0]) else None
+    )
+    scan = _split_scan(Xtr, ytr, feats, task, root_feature)
+
     # the real boosting ensemble (for XGBoost-style papers)
     gb, baseline = _fit_boosting(Xtr, ytr, task, n_rounds, lr)
     rounds = None
     if gb is not None:
-        rounds = [
-            {"tree": tree_to_dict(gb.estimators_[r][0].tree_, 0, feats, "regression", None)}
-            for r in range(n_rounds)
-        ]
+        # the "transformed table" BETWEEN stages: for a handful of training rows, what each round
+        # receives as input — the current prediction and the leftover error the next tree must fix
+        demo = Xtr.iloc[:7]
+        ydemo = ytr.iloc[:7]
+        F = np.full(len(demo), baseline)
+        show3 = feats[:3]
+        rounds = []
+        for r in range(n_rounds):
+            est = gb.estimators_[r][0]
+            table = []
+            for i in range(len(demo)):
+                cur = 1.0 / (1.0 + np.exp(-F[i])) if task == "classification" else F[i]
+                truth = float(ydemo.iloc[i])
+                resid = truth - cur
+                table.append({
+                    **{f: round(float(demo.iloc[i][f]), 2) for f in show3},
+                    "actual": lbl(ydemo.iloc[i], task, labels),
+                    "current": round(float(cur), 3),
+                    "residual": round(float(resid), 3),
+                })
+            rounds.append({
+                "tree": tree_to_dict(est.tree_, 0, feats, "regression", None),
+                "table": table,  # what THIS round sees before it trains
+            })
+            F = F + lr * est.predict(demo)
 
     preds = tree.predict(Xte)
     test_rows = []
@@ -126,7 +227,7 @@ def trace_trees(X, y, feats, target, task, labels, params=None) -> ModelTrace:
                 est = gb.estimators_[r][0]
                 contribs.append({
                     "path": tree_path(est.tree_, feats, row),
-                    "value": round(float(est.predict(row.to_frame().T)[0]), 3),
+                    "value": round(float(lr * est.predict(row.to_frame().T)[0]), 3),
                 })
             s = baseline + sum(c["value"] for c in contribs)
             tr["rounds"] = contribs
@@ -144,6 +245,7 @@ def trace_trees(X, y, feats, target, task, labels, params=None) -> ModelTrace:
         family="trees", target=target, task=task, features=show, labels=labels,
         table=table_rows(X, y, feats[:8], target, task, labels),
         tree=tree_to_dict(t, 0, feats, task, labels),
+        scan=scan,
         baseline=None if baseline is None else round(baseline, 3),
         rounds=rounds, test_rows=test_rows, params=cfg, param_spec=param_spec,
         note="A decision tree asks yes/no questions about the features. Each split is picked to best "

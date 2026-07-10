@@ -1,0 +1,166 @@
+"""The Learning Lab catalog — every registered model, its lesson key, and a one-liner.
+
+``has_deep_lesson`` is resolved at request time against the lesson registry, so entries flip
+automatically as hand-written scripts land (no edits here).
+"""
+
+from __future__ import annotations
+
+from .schema import CatalogEntry
+
+_CLS_REG = "classification / regression"
+
+
+def _e(key: str, cid: str, name: str, group: str, family: str, one: str, task: str = _CLS_REG) -> CatalogEntry:
+    return CatalogEntry(
+        key=key, component_id=cid, display_name=name, group=group, family=family,
+        one_liner=one, task=task,
+    )
+
+
+CATALOG: list[CatalogEntry] = [
+    # ---- Machine learning (17) ----
+    _e("xgboost", "model.ml.xgboost", "XGBoost", "Machine learning", "trees",
+       "Boosted trees with exact gradient math — the tabular-data champion."),
+    _e("gradient_boosting", "model.ml.gradient_boosting", "Gradient Boosting", "Machine learning", "trees",
+       "Trees added one by one, each fixing the last one's mistakes."),
+    _e("decision_tree", "model.ml.decision_tree", "Decision Tree", "Machine learning", "trees",
+       "A chain of yes/no questions you can read like a flowchart."),
+    _e("random_forest", "model.ml.random_forest", "Random Forest", "Machine learning", "trees",
+       "Many decorrelated trees vote — strong with almost no tuning."),
+    _e("extra_trees", "model.ml.extra_trees", "Extra Trees", "Machine learning", "trees",
+       "A forest with random cut-points — extra randomness, lower variance."),
+    _e("adaboost", "model.ml.adaboost", "AdaBoost", "Machine learning", "trees",
+       "Reweights the rows it got wrong so the next stump must face them."),
+    _e("bagging", "model.ml.bagging", "Bagging", "Machine learning", "trees",
+       "Train on bootstrap samples and average — variance melts away."),
+    _e("logistic_regression", "model.ml.logistic_regression", "Logistic Regression", "Machine learning",
+       "linear", "Weighted sum squeezed through a sigmoid into a probability.", "classification"),
+    _e("linear_regression", "model.ml.linear_regression", "Linear Regression", "Machine learning",
+       "linear", "The best-fit line: every feature gets a per-unit effect.", "regression"),
+    _e("ridge", "model.ml.ridge", "Ridge (L2)", "Machine learning", "linear",
+       "Linear regression where big weights cost you — shrinks, never zeroes.", "regression"),
+    _e("lasso", "model.ml.lasso", "Lasso (L1)", "Machine learning", "linear",
+       "Shrinks weights all the way to zero — feature selection for free.", "regression"),
+    _e("elastic_net", "model.ml.elastic_net", "Elastic Net", "Machine learning", "linear",
+       "The dial between ridge and lasso for correlated features.", "regression"),
+    _e("knn", "model.ml.knn", "K-Nearest Neighbors", "Machine learning", "knn",
+       "Memorize everything; predict from the most similar rows."),
+    _e("svm", "model.ml.svm", "Support Vector Machine", "Machine learning", "linear",
+       "Finds the widest street between the classes; kernels bend it."),
+    _e("naive_bayes", "model.ml.naive_bayes", "Naive Bayes", "Machine learning", "linear",
+       "Bayes' rule with a bold independence shortcut — tiny-data friendly.", "classification"),
+    _e("mlp", "model.ml.mlp", "Neural Network (MLP)", "Machine learning", "nn",
+       "Layers of weighted sums learn by sending blame backwards."),
+    _e("gaussian_process", "model.ml.gaussian_process", "Gaussian Process", "Machine learning", "trees",
+       "A distribution over functions — predictions with honest uncertainty."),
+    # ---- Deep learning (3) ----
+    _e("cnn", "model.dl.cnn", "CNN", "Deep learning", "nn",
+       "A small detector slides everywhere; pooling keeps the strongest evidence."),
+    _e("rnn", "model.dl.rnn", "RNN / LSTM / GRU", "Deep learning", "nn",
+       "A cell reads the sequence step by step; gates decide what to remember."),
+    _e("transformer", "model.dl.transformer", "Transformer", "Deep learning", "transformer",
+       "Every token attends to every other token — the architecture behind GPT."),
+    # ---- Clustering (5) ----
+    _e("kmeans", "model.clustering.kmeans", "K-Means", "Clustering", "clustering",
+       "Drop k centers, assign, move to the mean, repeat until settled.", "clustering"),
+    _e("dbscan", "model.clustering.dbscan", "DBSCAN", "Clustering", "clustering",
+       "Density chain-reactions find clusters of any shape — and flag noise.", "clustering"),
+    _e("gmm", "model.clustering.gmm", "Gaussian Mixture", "Clustering", "clustering",
+       "Soft membership: every point belongs a-little-bit to every cluster.", "clustering"),
+    _e("hierarchical", "model.clustering.hierarchical", "Hierarchical", "Clustering", "clustering",
+       "Closest pairs zip together into a dendrogram you can cut anywhere.", "clustering"),
+    _e("spectral", "model.clustering.spectral", "Spectral", "Clustering", "clustering",
+       "Turn points into a graph, cut the weak links, cluster the embedding.", "clustering"),
+    # ---- Anomaly detection (3) ----
+    _e("isolation_forest", "model.anomaly.isolation_forest", "Isolation Forest", "Anomaly detection",
+       "anomaly", "Weird points get boxed in by random cuts in just a few slices.", "anomaly detection"),
+    _e("lof", "model.anomaly.lof", "Local Outlier Factor", "Anomaly detection", "anomaly",
+       "Compares your crowdedness to your neighbors' — catches local oddballs.", "anomaly detection"),
+    _e("one_class_svm", "model.anomaly.one_class_svm", "One-Class SVM", "Anomaly detection", "anomaly",
+       "Shrink-wraps a boundary around normal; outside means anomaly.", "anomaly detection"),
+    # ---- Time series (2) ----
+    _e("ets", "model.timeseries.ets", "Exponential Smoothing (ETS)", "Time series", "timeseries",
+       "Level + trend + season, each updated with fading memory.", "forecasting"),
+    _e("sarima", "model.timeseries.sarima", "SARIMA", "Time series", "timeseries",
+       "Difference to stationary, then lags and past errors forecast the future.", "forecasting"),
+    # ---- Econometrics (5) ----
+    _e("ols", "model.econometrics.ols", "OLS (with inference)", "Econometrics", "linear",
+       "The regression you can testify about: standard errors, t-stats, CIs.", "regression"),
+    _e("logit", "model.econometrics.logit", "Logit", "Econometrics", "linear",
+       "Logistic regression read as odds ratios — the economist's yes/no model.", "classification"),
+    _e("probit", "model.econometrics.probit", "Probit", "Econometrics", "linear",
+       "A hidden score plus normal noise crosses a threshold — 0 or 1.", "classification"),
+    _e("poisson", "model.econometrics.poisson", "Poisson GLM", "Econometrics", "linear",
+       "For counts: a rate that multiplies, never goes negative.", "regression (counts)"),
+    _e("arima", "model.econometrics.arima", "ARIMA", "Econometrics", "timeseries",
+       "Autoregression + differencing + moving average on one series.", "forecasting"),
+    _e("pooled_ols", "model.econometrics.pooled_ols", "Pooled OLS (panel)", "Econometrics",
+       "linear", "Stack every entity-period row and run one regression — the panel baseline.",
+       "regression (panel)"),
+    _e("fixed_effects", "model.econometrics.fixed_effects", "Fixed Effects (within)",
+       "Econometrics", "linear",
+       "Demean within each entity — time-constant confounders vanish.", "regression (panel)"),
+    _e("random_effects", "model.econometrics.random_effects", "Random Effects", "Econometrics",
+       "linear", "Entity intercepts as draws from a distribution — efficient when exogenous.",
+       "regression (panel)"),
+    _e("quantile", "model.econometrics.quantile", "Quantile Regression", "Econometrics", "linear",
+       "Model the median or any percentile, not the mean — robust and distribution-aware.",
+       "regression"),
+    _e("negative_binomial", "model.econometrics.negative_binomial", "Negative Binomial",
+       "Econometrics", "linear",
+       "Count regression for overdispersed data where Poisson understates the errors.",
+       "regression (counts)"),
+    # ---- Time series & volatility ----
+    _e("arch", "model.econometrics.arch", "ARCH", "Time series", "timeseries",
+       "Volatility clustering: today's variance rides on recent squared shocks.", "volatility"),
+    _e("garch", "model.econometrics.garch", "GARCH", "Time series", "timeseries",
+       "The standard volatility model — persistent turbulence from shocks AND past variance.",
+       "volatility"),
+    _e("var", "model.econometrics.var", "Vector Autoregression (VAR)", "Time series", "timeseries",
+       "Several series predict each other from their joint past — impulse responses.",
+       "forecasting"),
+    # ---- Causal inference ----
+    _e("rct", "model.causal.rct", "RCT / A-B Test", "Causal inference", "linear",
+       "Randomisation makes a simple difference in means the causal effect.", "causal effect"),
+    _e("did", "model.causal.did", "Difference-in-Differences", "Causal inference", "linear",
+       "The treated group's before→after change minus the control's — the policy-eval workhorse.",
+       "causal effect"),
+    _e("iv", "model.causal.iv", "Instrumental Variables (2SLS)", "Causal inference", "linear",
+       "An instrument strips endogeneity via two regressions to recover the true effect.",
+       "causal effect"),
+    _e("rdd", "model.causal.rdd", "Regression Discontinuity", "Causal inference", "linear",
+       "The jump in the outcome at a treatment cutoff is the causal effect.", "causal effect"),
+    # ---- Time-series building blocks ----
+    _e("ar", "model.econometrics.ar", "AR (autoregressive)", "Time series", "timeseries",
+       "Today from its own recent past values — the AR piece of ARIMA.", "forecasting"),
+    _e("ma", "model.econometrics.ma", "MA (moving average)", "Time series", "timeseries",
+       "Today from recent forecast errors — the MA piece of ARIMA.", "forecasting"),
+    _e("arma", "model.econometrics.arma", "ARMA", "Time series", "timeseries",
+       "Past values AND past errors on a stationary series.", "forecasting"),
+    _e("vecm", "model.econometrics.vecm", "VECM (cointegration)", "Time series", "timeseries",
+       "Non-stationary series that share a long-run equilibrium and correct back to it.",
+       "forecasting"),
+    # ---- Volatility variants ----
+    _e("egarch", "model.econometrics.egarch", "EGARCH", "Time series", "timeseries",
+       "GARCH with the leverage effect — bad news raises volatility more.", "volatility"),
+    _e("gjr_garch", "model.econometrics.gjr_garch", "GJR-GARCH", "Time series", "timeseries",
+       "GARCH plus an asymmetry term for downside shocks.", "volatility"),
+    # ---- Discrete choice ----
+    _e("multinomial_logit", "model.econometrics.multinomial_logit", "Multinomial Logit",
+       "Econometrics", "linear", "Unordered categorical choice — brand, transport mode.",
+       "classification"),
+    _e("ordered_logit", "model.econometrics.ordered_logit", "Ordered Logit", "Econometrics",
+       "linear", "Ordered categories — ratings, Likert, low/med/high.", "classification"),
+    _e("ordered_probit", "model.econometrics.ordered_probit", "Ordered Probit", "Econometrics",
+       "linear", "Ordered categories via a latent score crossing thresholds.", "classification"),
+    # ---- Regression variants ----
+    _e("wls", "model.econometrics.wls", "Weighted Least Squares", "Econometrics", "linear",
+       "OLS that down-weights noisy rows — the fix for heteroskedasticity.", "regression"),
+    _e("gls", "model.econometrics.gls", "Generalized Least Squares", "Econometrics", "linear",
+       "OLS generalised to correlated / unequal-variance errors.", "regression"),
+    _e("robust", "model.econometrics.robust", "Robust Regression (RLM)", "Econometrics", "linear",
+       "A regression line that shrugs off outliers via Huber weighting.", "regression"),
+    _e("zip", "model.econometrics.zip", "Zero-Inflated Poisson", "Econometrics", "linear",
+       "Counts with far more zeros than Poisson expects.", "regression (counts)"),
+]

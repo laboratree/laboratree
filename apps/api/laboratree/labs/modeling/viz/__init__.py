@@ -15,7 +15,6 @@ import importlib
 import io
 import pkgutil
 from collections.abc import Callable
-from typing import Any
 
 from .schema import FeatureSelectionTrace, ModelTrace  # re-exported for the API layer
 
@@ -62,11 +61,24 @@ def build_trace(data: bytes, target: str, family: str, params: dict | None = Non
     df = pd.read_csv(io.BytesIO(data), nrows=2000)
     if target not in df.columns:
         target = df.columns[-1]
-    X, y, feats, task, labels = prep_xy(df, target)
+    params = dict(params or {})
+    # a model's DECLARED task (from its lesson/catalog) overrides data-based inference, so e.g.
+    # Linear Regression on a binary target is a linear probability model, not silently logistic.
+    task_hint = params.pop("_task", None)
+    X, y, feats, task, labels = prep_xy(df, target, task_hint=task_hint)
     if not feats:
         raise ValueError("no numeric features to trace")
+    # "features": the paper's selected subset for THIS model variant (e.g. the 13 BBO-picked
+    # attributes) — the whole animation then uses ONLY those columns, like the paper did.
+    wanted = params.pop("features", None)
+    if isinstance(wanted, list) and wanted:
+        low = {str(w).strip().lower() for w in wanted}
+        keep = [f for f in feats if f.lower() in low or any(w in f.lower() for w in low)]
+        if len(keep) >= 2:
+            feats = keep
+            X = X[keep]
     tracer = _TRACERS.get(family) or _TRACERS["trees"]
-    return tracer(X, y, feats, target, task, labels, params=params or {})
+    return tracer(X, y, feats, target, task, labels, params=params)
 
 
 def build_feature_selection(data: bytes, target: str) -> FeatureSelectionTrace:

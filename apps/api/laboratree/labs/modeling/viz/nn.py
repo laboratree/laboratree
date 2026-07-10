@@ -21,6 +21,33 @@ SPEC = [
 ]
 
 
+_RACE_EPOCHS = 80
+
+
+def _optimizer_race(Model, hidden, act, Xs, ysub, classes, task) -> dict | None:
+    """Three quick REAL fits of the same net — sgd / sgd+momentum / adam — loss curves only."""
+    import numpy as np
+
+    variants = {
+        "sgd": {"solver": "sgd", "momentum": 0.0, "learning_rate_init": 0.01},
+        "momentum": {"solver": "sgd", "momentum": 0.9, "learning_rate_init": 0.01},
+        "adam": {"solver": "adam", "learning_rate_init": 0.001},
+    }
+    out: dict[str, list[float]] = {}
+    for name, kw in variants.items():
+        try:
+            net = Model(hidden_layer_sizes=(hidden,), activation=act, random_state=0,
+                        max_iter=_RACE_EPOCHS, **kw)
+            net.fit(Xs, ysub)
+            lc = [float(v) for v in (getattr(net, "loss_curve_", None) or [])]
+            if len(lc) >= 2:
+                idx = np.unique(np.linspace(0, len(lc) - 1, min(40, len(lc))).round().astype(int))
+                out[name] = [round(lc[i], 4) for i in idx]
+        except Exception:  # a diverging variant shouldn't kill the lesson
+            continue
+    return out if len(out) >= 2 else None
+
+
 @register_tracer("nn")
 def trace_nn(X, y, feats, target, task, labels, params=None) -> ModelTrace:
     import numpy as np
@@ -34,10 +61,49 @@ def trace_nn(X, y, feats, target, task, labels, params=None) -> ModelTrace:
     Xtr, Xte, ytr, yte = split_holdout(X, y)
     m = min(600, len(Xs) - len(Xte))
     Model = MLPClassifier if task == "classification" else MLPRegressor
-    net = Model(
-        hidden_layer_sizes=(p["hidden"],), activation=act, max_iter=p["max_iter"], random_state=0
-    ).fit(Xs[:m], y.iloc[:m])
+    net = Model(hidden_layer_sizes=(p["hidden"],), activation=act, random_state=0)
     show = feats[:6]
+
+    # train EPOCH BY EPOCH (partial_fit) so we can snapshot the state between stages: the same
+    # demo row's output drifting toward the truth as the loss falls.
+    epochs = int(p["max_iter"])
+    ysub = y.iloc[:m]
+    classes = np.unique(ysub) if task == "classification" else None
+    marks = {1, max(2, epochs // 10), max(3, epochs // 2), epochs}
+    epoch_stages = []
+    demo = Xs[0]
+    truth = y.iloc[0]
+    for e in range(1, epochs + 1):
+        if task == "classification":
+            net.partial_fit(Xs[:m], ysub, classes=classes)
+        else:
+            net.partial_fit(Xs[:m], ysub)
+        if e in marks:
+            hid = demo @ net.coefs_[0] + net.intercepts_[0]
+            hid = np.tanh(hid) if act == "tanh" else (np.maximum(0, hid) if act == "relu" else 1 / (1 + np.exp(-hid)))
+            out = float(np.ravel(hid @ net.coefs_[1] + net.intercepts_[1])[0])
+            epoch_stages.append({
+                "epoch": e,
+                "loss": round(float(getattr(net, "loss_", 0.0)), 4),
+                "output": round(out, 3),
+            })
+
+    # the network's REAL training loss, epoch by epoch — downsampled to <=60 points so the
+    # frontend can animate "the error rolling downhill" (gradient descent).
+    lc = [float(v) for v in (getattr(net, "loss_curve_", None) or [])]
+    series = None
+    if len(lc) >= 2:
+        idx = np.unique(np.linspace(0, len(lc) - 1, min(60, len(lc))).round().astype(int))
+        series = {
+            "loss_curve": [round(lc[i], 4) for i in idx],
+            "epoch_stages": epoch_stages,
+            "demo_truth": float(truth) if task != "classification" else None,
+        }
+        # the optimizer race: the SAME tiny net trained three ways (plain SGD, SGD+momentum,
+        # Adam) so the lesson can show — with real curves — how the rolling style changes.
+        opt_curves = _optimizer_race(Model, p["hidden"], act, Xs[:m], ysub, classes, task)
+        if opt_curves:
+            series["optimizers"] = opt_curves
 
     def _activate(z):
         if act == "relu":
@@ -84,6 +150,7 @@ def trace_nn(X, y, feats, target, task, labels, params=None) -> ModelTrace:
             "w1": w1,
             "w2": w2,
         },
+        series=series,
         test_rows=test_rows, params=p, param_spec=param_spec,
         note="Standardized feature values flow into the hidden layer (each unit is a weighted mix "
         "passed through a squashing function), then combine into the output.",

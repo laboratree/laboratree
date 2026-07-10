@@ -145,6 +145,43 @@ async def model_catalog(principal: PrincipalDep) -> list[CatalogEntry]:
     return catalog_entries()
 
 
+class ExampleMeta(BaseModel):
+    model: str
+    name: str
+    target: str
+    task: str
+
+
+@router.get("/models/{model}/example", response_model=ExampleMeta)
+async def model_example_meta(model: str, principal: PrincipalDep) -> ExampleMeta:
+    """Metadata for a model's built-in example dataset (for the Learning Lab dropdown)."""
+    from ..labs.modeling.examples import example_for
+
+    ex = example_for(model)
+    return ExampleMeta(model=model, name=ex.name, target=ex.target, task=ex.task)
+
+
+@router.post("/models/{model}/example-lesson", response_model=Lesson)
+async def model_example_lesson(
+    model: str, principal: PrincipalDep, body: TraceParamsIn | None = None
+) -> Lesson:
+    """Build the lesson on the MODEL'S OWN example dataset — the Learning Lab default, so every
+    model is always taught on data that actually fits it (regression → a numeric outcome,
+    CNN → tiny images, ARIMA → a time series, clustering → blobs …)."""
+    from ..labs.modeling.examples import example_for
+
+    def _build() -> Lesson:
+        ex = example_for(model)
+        return build_lesson(ex.csv, ex.target, model, body.params if body else None)
+
+    try:
+        return await asyncio.to_thread(_build)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
 @router.post("/datasets/{dataset_id}/model-lesson", response_model=Lesson)
 async def model_lesson(
     dataset_id: uuid.UUID,
