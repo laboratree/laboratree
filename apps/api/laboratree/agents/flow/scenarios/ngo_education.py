@@ -16,13 +16,14 @@ from typing import Any
 
 import pandas as pd
 
-from ...fieldwork.models import Survey, SurveyStatus
-from ...labs.demo import education_records, education_survey_structure, pilot_panel_records
-from ...labs.synth.engine import get_persona_engine
-from ...labs.synth.social import build_social_graph
-from ...personas.models import Persona, PersonaCohort
-from ..run_executor import execute_component
-from . import FlowContext, PhaseResult, open_gate, phase
+from ....fieldwork.models import Survey, SurveyStatus
+from ....labs.demo import education_records, education_survey_structure, pilot_panel_records
+from ....labs.synth.engine import get_persona_engine
+from ....labs.synth.social import build_social_graph
+from ....personas.models import Persona, PersonaCohort
+from ...run_executor import execute_component
+from .. import FlowContext, PhaseResult, open_gate, phase
+from ..brain import agentic_phase
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ N_COMPLETES = 60
 
 async def _ensure_dataset(ctx: FlowContext) -> pd.DataFrame:
     if "df" not in ctx.state:
-        from ...api.demo import _store_dataset  # noqa: PLC0415 — avoids an import cycle at module load
+        from ....api.demo import _store_dataset  # noqa: PLC0415 — avoids an import cycle at module load
 
         df = pd.DataFrame(education_records())
         dataset = await _store_dataset(ctx.session, ctx.org_id, ctx.project_id,
@@ -47,7 +48,7 @@ async def _ensure_dataset(ctx: FlowContext) -> pd.DataFrame:
 
 async def _ensure_survey(ctx: FlowContext) -> Survey:
     if "survey" not in ctx.state:
-        from ...api.surveys import PUBLIC_TOKEN_BYTES, _structure_hash  # noqa: PLC0415
+        from ....api.surveys import PUBLIC_TOKEN_BYTES, _structure_hash  # noqa: PLC0415
 
         structure = education_survey_structure()
         survey = Survey(
@@ -87,10 +88,19 @@ async def _component_phase(
 
 # ----------------------------- understand -----------------------------
 
-@phase(FLOW_KEY, "intake")
-async def intake(ctx: FlowContext) -> PhaseResult:
+async def _intake_deterministic(ctx: FlowContext) -> PhaseResult:
     return await _component_phase(ctx, "intake", "demo.ngo_brief", {}, "demo",
                                   "brief parsed: mission, budget, timeline, target extracted")
+
+
+@phase(FLOW_KEY, "intake")
+async def intake(ctx: FlowContext) -> PhaseResult:
+    await _ensure_dataset(ctx)  # so the agent has real material to reason over
+    return await agentic_phase(
+        ctx, "intake",
+        "Extract the program's requirements from the context: mission, primary goal, budget, "
+        "timeline, target population, and key risks the research must address.",
+        _intake_deterministic)
 
 
 @phase(FLOW_KEY, "stakeholders")
@@ -120,9 +130,25 @@ async def questions(ctx: FlowContext) -> PhaseResult:
     return await _research_frame(ctx, "questions", "research questions defined")
 
 
+async def _hypotheses_deterministic(ctx: FlowContext) -> PhaseResult:
+    return await _research_frame(ctx, "hypotheses", "H1-H3 stated and tested against the data")
+
+
 @phase(FLOW_KEY, "hypotheses")
 async def hypotheses(ctx: FlowContext) -> PhaseResult:
-    return await _research_frame(ctx, "hypotheses", "H1-H3 stated and tested against the data")
+    await _ensure_dataset(ctx)
+    result = await agentic_phase(
+        ctx, "hypotheses",
+        "Propose 3-5 falsifiable hypotheses about what drives school dropout in this data, each "
+        "grounded in a specific pattern visible in the context (name the columns).",
+        _hypotheses_deterministic)
+    if result.artifacts.get("agent"):
+        # theory the agent proposed still gets TESTED against the data (never opinion-only)
+        tested = await _research_frame(ctx, "hypotheses",
+                                       "agent hypotheses tested against the data")
+        result.evidence += tested.evidence
+        result.artifacts["tested_run_id"] = tested.run_id
+    return result
 
 
 # ----------------------------- design + personas + field -----------------------------
@@ -137,7 +163,7 @@ async def design(ctx: FlowContext) -> PhaseResult:
 
 @phase(FLOW_KEY, "personas")
 async def personas(ctx: FlowContext) -> PhaseResult:
-    from ...api.personas import execute_wave  # noqa: PLC0415
+    from ....api.personas import execute_wave  # noqa: PLC0415
 
     survey = await _ensure_survey(ctx)
     engine = get_persona_engine()
@@ -173,7 +199,7 @@ async def questionnaire(ctx: FlowContext) -> PhaseResult:
 
 @phase(FLOW_KEY, "field")
 async def field(ctx: FlowContext) -> PhaseResult:
-    from ...api.demo import _synthetic_completes  # noqa: PLC0415
+    from ....api.demo import _synthetic_completes  # noqa: PLC0415
 
     survey = await _ensure_survey(ctx)
     completes = _synthetic_completes(survey, ctx.org_id, n=N_COMPLETES)
@@ -242,7 +268,7 @@ async def intervention(ctx: FlowContext) -> PhaseResult:
 
 @phase(FLOW_KEY, "pilot")
 async def pilot(ctx: FlowContext) -> PhaseResult:
-    from ...api.demo import _store_dataset  # noqa: PLC0415
+    from ....api.demo import _store_dataset  # noqa: PLC0415
 
     pilot_df = pd.DataFrame(pilot_panel_records())
     dataset = await _store_dataset(ctx.session, ctx.org_id, ctx.project_id,
@@ -268,7 +294,7 @@ async def impact(ctx: FlowContext) -> PhaseResult:
 
 @phase(FLOW_KEY, "recommend")
 async def recommend(ctx: FlowContext) -> PhaseResult:
-    from ...api.demo import _build_report  # noqa: PLC0415
+    from ....api.demo import _build_report  # noqa: PLC0415
 
     report, share_path = await _build_report(
         ctx.session, ctx.org_id, ctx.project_id, ctx.state.get("run_ids") or {})

@@ -37,6 +37,10 @@ class FlowContext:
     flow_run: Run                                  # the parent Run all gates hang off
     state: dict[str, Any] = field(default_factory=dict)   # cross-phase artifacts
 
+    def bucket(self, stage_id: str) -> str:
+        """Each phase gets its own blob-store prefix for artifacts it produces."""
+        return f"flows/{self.flow_run.id}/{stage_id}/"
+
 
 @dataclass
 class PhaseResult:

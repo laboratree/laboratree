@@ -228,15 +228,85 @@ def _doi_key(url: str) -> str:
     return low
 
 
+def arxiv_search(query: str, count: int) -> list[SearchHit]:
+    """Search arXiv (export.arxiv.org) — free, keyless preprints; Atom feed parsed with stdlib."""
+    import xml.etree.ElementTree as ET
+
+    import httpx
+
+    try:
+        resp = httpx.get(
+            "https://export.arxiv.org/api/query",
+            params={"search_query": f"all:{query}", "max_results": min(count, 25),
+                    "sortBy": "relevance"},
+            headers={"User-Agent": _USER_AGENT}, timeout=_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            log.info("arxiv HTTP %s for %r", resp.status_code, query)
+            return []
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        hits: list[SearchHit] = []
+        for entry in ET.fromstring(resp.text).findall("a:entry", ns):
+            title = " ".join((entry.findtext("a:title", "", ns) or "").split())
+            url = entry.findtext("a:id", "", ns) or ""
+            summary = " ".join((entry.findtext("a:summary", "", ns) or "").split())[:400]
+            if title and url:
+                hits.append(SearchHit(title=title, url=url, description=summary, source="arxiv"))
+        return hits[:count]
+    except Exception as exc:
+        log.info("arxiv search failed for %r: %s", query, exc)
+        return []
+
+
+def reddit_search(query: str, count: int | None = None) -> list[SearchHit]:
+    """Search Reddit's public JSON API — keyless consumer/community sentiment (market research).
+
+    Reddit rate-limits hard without OAuth, so this is best-effort like every provider here:
+    failures degrade to an empty list, never an error.
+    """
+    import httpx
+
+    n = count or settings.web_search_max_results
+    try:
+        resp = httpx.get(
+            "https://www.reddit.com/search.json",
+            params={"q": query, "limit": min(n, 25), "sort": "relevance"},
+            headers={"User-Agent": _USER_AGENT}, timeout=_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            log.info("reddit search HTTP %s for %r", resp.status_code, query)
+            return []
+        children = ((resp.json() or {}).get("data") or {}).get("children") or []
+        hits: list[SearchHit] = []
+        for child in children:
+            d = child.get("data") or {}
+            title = d.get("title") or ""
+            permalink = d.get("permalink") or ""
+            if not (title and permalink):
+                continue
+            meta = (f"r/{d.get('subreddit', '?')} · {d.get('score', 0)} points · "
+                    f"{d.get('num_comments', 0)} comments")
+            body = (d.get("selftext") or "")[:300]
+            hits.append(SearchHit(
+                title=title, url=f"https://www.reddit.com{permalink}",
+                description=f"{meta}. {body}".strip(". "), source="reddit",
+            ))
+        return hits[:n]
+    except Exception as exc:
+        log.info("reddit search failed for %r: %s", query, exc)
+        return []
+
+
 def research_search(query: str, count: int | None = None) -> list[SearchHit]:
-    """Evidence search for the Ideation deep agent: real papers first (OpenAlex + Semantic Scholar —
-    both keyless), then the open web (Brave→SerpAPI) to fill in. Deduped by DOI. Works even with NO
-    web key, since the scholarly sources need none."""
+    """Evidence search for the Ideation deep agent: real papers first (OpenAlex + Semantic Scholar +
+    arXiv — all keyless), then the open web (Brave→SerpAPI) to fill in. Deduped by DOI. Works even
+    with NO web key, since the scholarly sources need none."""
     n = count or settings.web_search_max_results
     hits: list[SearchHit] = []
     seen: set[str] = set()
     # scholarly sources first (papers), then web to fill any gap
-    for provider in (openalex_search, semantic_scholar_search, lambda q, c: web_search(q, c)):
+    for provider in (openalex_search, semantic_scholar_search, arxiv_search,
+                     lambda q, c: web_search(q, c)):
         if len(hits) >= n:
             break
         for h in provider(query, n):

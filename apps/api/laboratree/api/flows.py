@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..agents import flow as flow_engine
-from ..agents.flow import ngo_education  # noqa: F401 — importing registers the executors
+from ..agents.flow import scenarios  # noqa: F401 — importing registers every scenario's executors
 from ..core.deps import Principal, SessionDep, require_role
 from ..projects.models import Project
 from ..tenancy.models import Role
