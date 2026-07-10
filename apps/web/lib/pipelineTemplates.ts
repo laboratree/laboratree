@@ -180,7 +180,7 @@ export const NGO_POLICY_FLOW: FlowTemplate = {
     { id: "pilot", label: "13 · Pilot", kind: "lab", labTab: "field",
       description: "Field a pilot; monitor attendance, learning, cost, satisfaction." },
     { id: "impact", label: "14 · Impact evaluation", kind: "lab", labTab: "field",
-      description: "Field Lab: run before/after pilot waves, then a DiD / cost-effectiveness estimate (needs panel data)." },
+      description: "DiD on before/after pilot panel data (the demo seed runs model.causal.did on the bicycle pilot — see Evidence). Real studies: field a second wave first." },
     { id: "recommend", label: "15 · Recommendations", kind: "lab", labTab: "deliver",
       description: "Deliverables: Evidence-bound recommendations + budget allocation + scaling plan." },
     { id: "monitor", label: "16 · Monitor & improve", kind: "lab", labTab: "deliver",

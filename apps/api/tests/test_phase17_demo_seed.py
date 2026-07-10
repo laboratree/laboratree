@@ -6,7 +6,13 @@ import uuid
 from statistics import mean
 
 from fastapi.testclient import TestClient
-from laboratree.labs.demo import education_records, education_survey_structure
+from laboratree.labs.demo import (
+    PILOT_EFFECT,
+    TREATMENT_VILLAGES,
+    education_records,
+    education_survey_structure,
+    pilot_panel_records,
+)
 from laboratree.main import app
 
 # ----------------------------- pure: realistic data -----------------------------
@@ -36,6 +42,21 @@ def test_education_data_is_deterministic_and_has_real_correlations():
     assert hi_att > lo_att
 
 
+def test_pilot_panel_did_recovers_planted_effect():
+    rows = pilot_panel_records(n_per_period=200, seed=4104)
+    assert pilot_panel_records(n_per_period=200, seed=4104) == rows   # deterministic
+    assert len(rows) == 400                                            # 200 students x 2 periods
+    assert all(r["treated"] == (1 if r["village"] in TREATMENT_VILLAGES else 0) for r in rows)
+
+    # hand-computed difference-in-differences must recover the planted effect
+    def cell_mean(treated: int, post: int) -> float:
+        vals = [r["attendance_rate"] for r in rows if r["treated"] == treated and r["post"] == post]
+        return mean(vals)
+
+    did = (cell_mean(1, 1) - cell_mean(1, 0)) - (cell_mean(0, 1) - cell_mean(0, 0))
+    assert abs(did - PILOT_EFFECT) < 0.02   # noise sigma 0.03, n=400 -> tight recovery
+
+
 def test_survey_structure_is_valid():
     from laboratree.labs.fieldwork.runtime import validate_structure
     assert validate_structure(education_survey_structure()) == []
@@ -63,6 +84,15 @@ def test_seed_creates_dataset_evidence_survey_and_cohort():
         assert body["evidence_total"] >= 3
         assert all("run_id" in run for run in body["runs"])       # every analysis ran
         assert body["personas"] == 8
+
+        # impact evaluation genuinely ran: DiD on the pilot panel with the planted effect
+        did_run = next(r for r in body["runs"] if r["component_id"] == "model.causal.did")
+        assert "run_id" in did_run and did_run["evidence"] >= 1
+        assert body["pilot_dataset_id"]
+        assert len(body["pilot_rows"]) == 400
+        run_detail = client.get(f"/api/runs/{did_run['run_id']}/evidence", headers=headers).json()
+        did_effect = next(e["value"] for e in run_detail if e["label"] == "did_effect")
+        assert abs(float(did_effect) - PILOT_EFFECT) < 0.02
 
         # the dataset is real and downloadable via the evidence picker's project scope
         evidence = client.get(f"/api/projects/{project_id}/evidence", headers=headers).json()

@@ -1318,6 +1318,8 @@ export type SeedResult = {
   n_rows: number;
   columns: string[];
   rows: Record<string, unknown>[];
+  pilot_dataset_id: string;
+  pilot_rows: Record<string, unknown>[];
   runs: { component_id: string; run_id?: string; evidence?: number; error?: string }[];
   evidence_total: number;
   survey_id: string;

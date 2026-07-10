@@ -18,7 +18,7 @@ const NODE_W = 200;
 const CELL_W = 240;
 const CELL_H = 110;
 
-type StepStatus = "idle" | "running" | "succeeded" | "failed" | "skipped";
+type StepStatus = "idle" | "running" | "succeeded" | "failed" | "guided";
 
 type StageState = FlowStage & {
   status: StepStatus;
@@ -42,6 +42,7 @@ function nodeStyle(stage: StageState, selected: boolean): React.CSSProperties {
   if (stage.status === "running") { base.background = "#FEF3C7"; base.border = "2px solid #F59E0B"; }
   if (stage.status === "succeeded") { base.background = "#6DB33F"; base.color = "#fff"; }
   if (stage.status === "failed") { base.background = "#C0392B"; base.color = "#fff"; }
+  if (stage.status === "guided") base.border = `2px ${stage.kind === "manual" ? "dashed" : "solid"} #93B8DF`;
   return base;
 }
 
@@ -106,7 +107,7 @@ export default function PipelineLab({ projectId }: { projectId: string }) {
     setStages((all) =>
       all.map((s) =>
         s.kind === "component" ? { ...s, status: "running", result: undefined }
-          : { ...s, status: "skipped" },
+          : { ...s, status: "guided" },
       ),
     );
     try {
@@ -141,7 +142,9 @@ export default function PipelineLab({ projectId }: { projectId: string }) {
       id: s.id,
       position: { x: (i % GRID_COLS) * CELL_W, y: Math.floor(i / GRID_COLS) * CELL_H },
       data: {
-        label: `${s.kind === "component" ? "⚙️" : s.kind === "lab" ? "🧪" : "👤"} ${s.label}`,
+        label: `${s.kind === "component" ? "⚙️" : s.kind === "lab" ? "🧪" : "👤"} ${s.label}${
+          s.status === "guided" ? (s.kind === "lab" ? " · open its Lab" : " · human step") : ""
+        }`,
       },
       style: nodeStyle(s, s.id === selectedId),
     }));
@@ -162,8 +165,9 @@ export default function PipelineLab({ projectId }: { projectId: string }) {
           <div>
             <h2 className="font-display text-xl text-forest">Pipeline · {flowName}</h2>
             <p className="mt-1 text-sm text-muted">
-              n8n-style flow: ⚙️ runnable components (Evidence-locked), 🧪 Lab stages, 👤 manual
-              stages. Load a pre-configured firm flow or build your own.
+              n8n-style flow: ⚙️ components run autonomously (Evidence-locked); 🧪 Lab stages are
+              human-in-the-loop — Run highlights them and each opens in its Lab tab; 👤 manual
+              stages are offline human work. Load a pre-configured firm flow or build your own.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

@@ -21,7 +21,7 @@ from ..core.deps import Principal, SessionDep, require_role
 from ..core.repro import dataframe_hash
 from ..core.storage import get_blob_store
 from ..fieldwork.models import Survey, SurveyStatus
-from ..labs.demo import education_records, education_survey_structure
+from ..labs.demo import education_records, education_survey_structure, pilot_panel_records
 from ..labs.synth.engine import get_persona_engine
 from ..personas.models import Persona, PersonaCohort
 from ..projects.models import Dataset, Project
@@ -93,6 +93,26 @@ async def seed_demo(
             log.warning("demo analysis %s failed: %s", component_id, exc)
             runs.append({"component_id": component_id, "error": str(exc)[:200]})
 
+    # longitudinal pilot panel so impact evaluation (DiD) runs on real before/after data
+    pilot_rows = pilot_panel_records()
+    pilot_df = pd.DataFrame(pilot_rows)
+    pilot_dataset = await _store_dataset(
+        session, principal, project_id, "Bicycle pilot panel (demo)", pilot_df)
+    try:
+        did = await execute_component(
+            session, org_id=principal.org_id, project_id=project_id,
+            component_id="model.causal.did",
+            params={"outcome": "attendance_rate", "treated_group": "treated",
+                    "post_period": "post"},
+            inputs={"dataset": pilot_df}, lab="impact",
+        )
+        runs.append({"component_id": "model.causal.did", "run_id": str(did.run.id),
+                     "evidence": did.evidence_count})
+        evidence_total += did.evidence_count
+    except Exception as exc:
+        log.warning("demo DiD failed: %s", exc)
+        runs.append({"component_id": "model.causal.did", "error": str(exc)[:200]})
+
     # a matching education survey (draft, ready to publish or run against personas)
     survey = Survey(org_id=principal.org_id, project_id=project_id,
                     title="Rural education access (demo)",
@@ -122,6 +142,8 @@ async def seed_demo(
         "n_rows": int(len(df)),
         "columns": list(df.columns),
         "rows": records,  # so the Pipeline canvas can run its component nodes on the demo data
+        "pilot_dataset_id": str(pilot_dataset.id),
+        "pilot_rows": pilot_rows,  # before/after panel for the DiD pipeline node
         "runs": runs,
         "evidence_total": evidence_total,
         "survey_id": str(survey.id),

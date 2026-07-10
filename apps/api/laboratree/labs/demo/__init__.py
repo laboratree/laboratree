@@ -57,6 +57,38 @@ def education_records(n: int = 300, seed: int = 1729) -> list[dict[str, Any]]:
     return rows
 
 
+TREATMENT_VILLAGES = frozenset(VILLAGES[:5])   # bicycles piloted here
+PILOT_EFFECT = 0.12                            # planted true DiD effect on attendance
+COMMON_TREND = 0.02                            # secular improvement both groups share
+
+
+def pilot_panel_records(n_per_period: int = 200, seed: int = 4104) -> list[dict[str, Any]]:
+    """Before/after pilot panel: bicycle intervention in 5 treatment villages.
+
+    Two observations per student (post=0, post=1). Treated students gain ``PILOT_EFFECT``
+    attendance on top of a common trend, so difference-in-differences can recover a true,
+    known effect — the honest way to demo impact evaluation.
+    """
+    rng = random.Random(seed)
+    rows: list[dict[str, Any]] = []
+    for i in range(n_per_period):
+        village = rng.choice(VILLAGES)
+        treated = 1 if village in TREATMENT_VILLAGES else 0
+        base = min(0.98, max(0.3, rng.gauss(0.72, 0.10)))
+        for post in (0, 1):
+            attendance = base + post * (COMMON_TREND + treated * PILOT_EFFECT) + rng.gauss(0, 0.03)
+            rows.append({
+                "student_id": f"P{i + 1:04d}",
+                "village": village,
+                "treated": treated,
+                "post": post,
+                "attendance_rate": round(max(0.0, min(1.0, attendance)), 3),
+            })
+    log.info("generated pilot panel: %d rows (%d students x 2 periods, seed=%d)",
+             len(rows), n_per_period, seed)
+    return rows
+
+
 def education_survey_structure() -> dict[str, Any]:
     """A KAP-style education survey matching the demo dataset's themes."""
     return {
@@ -77,4 +109,7 @@ def education_survey_structure() -> dict[str, Any]:
     }
 
 
-__all__ = ["education_records", "education_survey_structure", "VILLAGES", "INCOME_BANDS"]
+__all__ = [
+    "education_records", "pilot_panel_records", "education_survey_structure",
+    "VILLAGES", "TREATMENT_VILLAGES", "INCOME_BANDS", "PILOT_EFFECT",
+]
