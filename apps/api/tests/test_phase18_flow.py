@@ -4,8 +4,22 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 from laboratree.main import app
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_brain(monkeypatch):
+    """Pin the deterministic executor path: no real LLM keys (the dev .env may carry them)."""
+    from laboratree.core.config import settings
+    from laboratree.core.llm import get_llm
+
+    monkeypatch.setattr(settings, "llm_provider", "azure")
+    monkeypatch.setattr(settings, "azure_openai_api_key", "")
+    get_llm.cache_clear()
+    yield
+    get_llm.cache_clear()
 
 
 def _setup(client: TestClient) -> tuple[dict[str, str], str]:

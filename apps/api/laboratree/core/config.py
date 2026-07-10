@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Plain OpenAI — or ANY OpenAI-compatible endpoint (DeepSeek, DeepInfra, Together, Fireworks,
     # OpenRouter, Groq, a self-hosted vLLM/Ollama). Set openai_base_url to that provider's /v1 URL,
     # openai_model to its model id, openai_api_key to its key. Leave base_url blank for real OpenAI.
+    # Open-weight AGENT brain (roadmap 4.2): Nous Hermes (agentic/function-calling tuned) via
+    # OpenRouter — llm_provider=openai, openai_base_url=https://openrouter.ai/api/v1,
+    # reasoning_model=nousresearch/hermes-4-405b (hermes-4-70b for bulk). Zero code change.
     openai_api_key: str = ""
     openai_base_url: str = ""  # e.g. https://api.deepseek.com  ·  https://api.deepinfra.com/v1/openai
     openai_model: str = "gpt-5.1"

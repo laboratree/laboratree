@@ -92,6 +92,14 @@ async def execute_component(
     sink = BufferedEvidenceSink(run_id=run.id, org_id=org_id)
     data_version = dataframe_hash(inputs.get("dataset")) if "dataset" in inputs else ""
 
+    # no LLM key must never block non-LLM components — ctx.llm degrades to None (graceful,
+    # logged); LLM-needing components raise their own typed errors at call time
+    try:
+        llm = get_llm()
+    except Exception as exc:
+        log.warning("run %s: LLM client unavailable (%s) — ctx.llm=None", run.id, exc)
+        llm = None
+
     with tempfile.TemporaryDirectory(prefix=f"run-{run.id}-") as tmp:
         ctx = RunContext(
             run_id=str(run.id),
@@ -101,7 +109,7 @@ async def execute_component(
             workdir=Path(tmp),
             blobs=get_blob_store(),
             evidence=sink,
-            llm=get_llm(),
+            llm=llm,
         )
         _seed_everything(seed)
         try:
