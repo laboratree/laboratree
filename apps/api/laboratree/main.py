@@ -17,6 +17,7 @@ from .api import (
     deliverables,
     demo,
     experiments,
+    flows,
     gates,
     health,
     ideation,
@@ -96,6 +97,7 @@ app.include_router(qual.router)
 app.include_router(deliverables.router)
 app.include_router(deliverables.public_router)
 app.include_router(demo.router)
+app.include_router(flows.router)
 app.include_router(components.router)
 
 

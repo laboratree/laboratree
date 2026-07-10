@@ -51,14 +51,14 @@ class SeedIn(BaseModel):
 
 
 async def _store_dataset(
-    session: SessionDep, principal: Principal, project_id: uuid.UUID,
+    session: SessionDep, org_id: uuid.UUID, project_id: uuid.UUID,
     name: str, df: pd.DataFrame,
 ) -> Dataset:
     buf = io.BytesIO()
     df.to_csv(buf, index=False)
     key = f"demo/{project_id}/{uuid.uuid4()}.csv"
     get_blob_store().put(key, buf.getvalue())
-    ds = Dataset(org_id=principal.org_id, project_id=project_id, name=name, storage_key=key,
+    ds = Dataset(org_id=org_id, project_id=project_id, name=name, storage_key=key,
                  content_hash=dataframe_hash(df), n_rows=int(len(df)), n_cols=int(df.shape[1]))
     session.add(ds)
     await session.flush()
@@ -80,7 +80,7 @@ async def seed_demo(
 
     records = education_records(n=body.n_rows)
     df = pd.DataFrame(records)
-    dataset = await _store_dataset(session, principal, project_id, "Rural education (demo)", df)
+    dataset = await _store_dataset(session, principal.org_id, project_id, "Rural education (demo)", df)
 
     # Evidence-producing analysis runs — real runs, real Evidence in the ledger.
     # Ordered to mirror the NGO flow: intake → stakeholders → hypotheses → design → analysis.
@@ -114,7 +114,7 @@ async def seed_demo(
     pilot_rows = pilot_panel_records()
     pilot_df = pd.DataFrame(pilot_rows)
     pilot_dataset = await _store_dataset(
-        session, principal, project_id, "Bicycle pilot panel (demo)", pilot_df)
+        session, principal.org_id, project_id, "Bicycle pilot panel (demo)", pilot_df)
     try:
         did = await execute_component(
             session, org_id=principal.org_id, project_id=project_id,
@@ -169,7 +169,7 @@ async def seed_demo(
     wave_report = await execute_wave(session, cohort, survey, org_id=principal.org_id)
 
     # the Evidence-bound report + public share link (U1: every number binds real Evidence)
-    report, share_path = await _build_report(session, principal, project_id, run_ids)
+    report, share_path = await _build_report(session, principal.org_id, project_id, run_ids)
 
     await session.commit()
     log.info("seeded demo '%s' into project %s: dataset=%s, %d evidence, survey LIVE, "
@@ -243,7 +243,7 @@ def _synthetic_completes(survey: Survey, org_id: uuid.UUID, *, n: int = 60) -> l
 
 
 async def _build_report(
-    session: SessionDep, principal: Principal, project_id: uuid.UUID, run_ids: dict[str, str]
+    session: SessionDep, org_id: uuid.UUID, project_id: uuid.UUID, run_ids: dict[str, str]
 ) -> tuple[Report, str | None]:
     """Compose the recommendations report from real Evidence and mint its public share link."""
     wanted_runs = [uuid.UUID(r) for r in
@@ -278,7 +278,7 @@ async def _build_report(
         log.warning("demo report blocks rejected: %s", errors)
         blocks = [b for b in blocks if b.get("type") not in {"stat"}]
 
-    report = Report(org_id=principal.org_id, project_id=project_id,
+    report = Report(org_id=org_id, project_id=project_id,
                     title="NGO education study — recommendations (demo)", blocks=blocks,
                     share_token=secrets.token_urlsafe(24))
     session.add(report)

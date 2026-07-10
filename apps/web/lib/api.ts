@@ -1333,6 +1333,30 @@ export const demoApi = {
     apiPost<SeedResult>(`/api/projects/${projectId}/demo/seed`, { scenario }),
 };
 
+// ---------------- Flow orchestrator ----------------
+export type FlowStageResult = {
+  id: string;
+  status: "succeeded" | "failed" | "gated" | "skipped";
+  summary: string;
+  run_id: string | null;
+  evidence: number;
+  artifacts: Record<string, unknown>;
+  error: string | null;
+};
+export type FlowRunReport = {
+  flow_key: string;
+  flow_run_id: string;
+  status: string;
+  stages: FlowStageResult[];
+  gates_opened: number;
+  evidence_total: number;
+};
+export const flowsApi = {
+  run: (projectId: string, flowKey: string, stages?: string[]) =>
+    apiPost<FlowRunReport>(`/api/projects/${projectId}/flows/${flowKey}/run`,
+      stages ? { stages } : {}),
+};
+
 // ---------------- Persona Lab ----------------
 export type PersonaCohort = {
   id: string;

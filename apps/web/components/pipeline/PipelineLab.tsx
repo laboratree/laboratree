@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Background, Controls, ReactFlow, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Papa from "papaparse";
-import { Api, demoApi, type ComponentSpecLite, type PipelineResult } from "@/lib/api";
+import { Api, demoApi, flowsApi, type ComponentSpecLite, type PipelineResult } from "@/lib/api";
 import { FLOW_TEMPLATES, type FlowNodeKind, type FlowPhase } from "@/lib/pipelineTemplates";
 import type { LabTabKey } from "@/lib/labTabs";
 import FileDropzone from "@/components/FileDropzone";
@@ -161,6 +161,50 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
     }
   }
 
+  const flowKey = FLOW_TEMPLATES.find((t) => t.name === flowName)?.key;
+
+  async function runOrchestrated() {
+    if (!flowKey) return;
+    setBusy(true);
+    setError(null);
+    setSeedNote(null);
+    setStages((all) => all.map((s) => ({ ...s, status: "running" as StepStatus })));
+    try {
+      const report = await flowsApi.run(projectId, flowKey, stages.map((s) => s.id));
+      const byId = new Map(report.stages.map((r) => [r.id, r]));
+      setStages((all) => all.map((s) => {
+        const r = byId.get(s.id);
+        if (!r) return { ...s, status: "idle" as StepStatus };
+        const succeeded = r.status === "succeeded";
+        return {
+          ...s,
+          status: (s.kind === "component"
+            ? (succeeded ? "succeeded" : r.status === "failed" ? "failed" : "idle")
+            : "idle") as StepStatus,
+          markedDone: s.kind !== "component" && succeeded,
+          result: r.run_id
+            ? { component_id: s.componentId ?? r.id, status: r.status,
+                run_id: r.run_id, evidence_count: r.evidence,
+                error: r.error ?? undefined, preview: r.artifacts }
+            : undefined,
+          description: r.summary ? `${s.description} — 🤖 ${r.summary}` : s.description,
+        };
+      }));
+      setSeedNote(
+        `Orchestrated run ${report.status}: ${report.stages.filter((r) => r.status === "succeeded").length}`
+        + `/${report.stages.length} phases, ${report.evidence_total} Evidence, `
+        + `${report.gates_opened} gate${report.gates_opened === 1 ? "" : "s"} awaiting approval.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? `orchestrated run failed: ${e.message}` : "run failed");
+      setStages((all) =>
+        all.map((s) => (s.status === "running" ? { ...s, status: "idle" as StepStatus } : s)),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const graph = useMemo(
     () => buildFlowGraph({ stages, phases, selectedId, runInFlight: busy }),
     [stages, phases, selectedId, busy],
@@ -243,6 +287,13 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             className="rounded-lg bg-leaf px-4 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-50">
             {busy ? "Running…" : `▶ Run ${runnableCount} runnable step${runnableCount === 1 ? "" : "s"}`}
           </button>
+          {flowKey === "ngo-policy" && (
+            <button onClick={runOrchestrated} disabled={busy || stages.length === 0}
+              title="Every phase runs as a sub-agent: analyses execute, the survey publishes and fields, personas simulate, the report composes — human steps open gates."
+              className="rounded-lg bg-forest px-4 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-50">
+              {busy ? "Orchestrating…" : "🤖 Run whole flow"}
+            </button>
+          )}
           <span className="mx-2 h-5 w-px bg-line" />
           {(Object.keys(KIND_META) as (keyof typeof KIND_META)[]).map((k) => (
             <span
