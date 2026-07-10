@@ -1,7 +1,7 @@
 "use client";
 
-import type { ModelTrace, TestRow } from "@/lib/api";
 import type { TestProps, TrainProps } from "./shared";
+import { LossDescent, lossCurveOf } from "./loss-curve";
 
 /** Neural-network family — a LITERAL network: neuron circles joined by the REAL learned weights
  *  (thicker = stronger, green = positive, red = negative). Training loops a forward pulse
@@ -177,6 +177,7 @@ function NetworkDiagram({
 
 export function Train({ trace }: TrainProps) {
   if (!trace.forward) return null;
+  const curve = lossCurveOf(trace);
   return (
     <div>
       <p className="mb-1 text-[11px] text-muted">
@@ -192,6 +193,46 @@ export function Train({ trace }: TrainProps) {
         animate
         caption="forward pass (green/red dashes) → error → backprop sweep (gold, right-to-left) → weights adjust — repeating"
       />
+      <EpochStages trace={trace} />
+      {curve && (
+        <div className="mt-2">
+          <p className="mb-1 text-[11px] text-muted">
+            And here is what all those loops add up to — this network&apos;s <b>actual error</b>,
+            recorded pass after pass while it trained on this data:
+          </p>
+          <LossDescent
+            curve={curve}
+            caption="training = repeatedly nudging the weights downhill on this error surface — each step, the error shrinks. This is the network's own loss curve, recorded epoch by epoch."
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The state between training stages: the SAME row's output at a few epochs — watch the network's
+ *  answer drift toward the truth as the loss falls. */
+function EpochStages({ trace }: { trace: import("@/lib/api").ModelTrace }) {
+  const s = (trace.series ?? {}) as {
+    epoch_stages?: { epoch: number; loss: number; output: number }[];
+  };
+  const stages = s.epoch_stages;
+  if (!stages?.length) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-[#C9A227]/40 bg-[#FFFDF5] p-2 text-[11px]">
+      <p className="mb-1 font-medium text-[#8a6d1a]">
+        The same row, asked at different points during training:
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {stages.map((st, i) => (
+          <div key={i} className="rounded-lg border border-line bg-white px-2 py-1 text-center">
+            <div className="text-[10px] text-muted">epoch {st.epoch}</div>
+            <div className="font-semibold text-forest">{st.output}</div>
+            <div className="text-[10px] text-muted">loss {st.loss}</div>
+          </div>
+        ))}
+        <div className="grid place-items-center text-muted">→ the answer firms up as the error falls</div>
+      </div>
     </div>
   );
 }

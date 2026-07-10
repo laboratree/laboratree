@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { TreeNode } from "@/lib/api";
+import { useEffect, useState } from "react";
+import type { SplitScan, SplitScanFeature, TreeNode } from "@/lib/api";
 import type { TestProps, TrainProps } from "./shared";
 
 /** Trees family — a LITERAL tree diagram (SVG): question nodes branch yes/no down to colored
@@ -171,21 +171,241 @@ export function TreeDiagram({ root, path }: { root: TreeNode; path?: string[] })
 
 const isBoostHint = (hint?: string) => /(boost|xgb|gbm|gbdt|lightgbm|catboost)/i.test(hint ?? "");
 
+/** The "transformed table" BETWEEN boosting stages: what this round receives as its input —
+ *  each row's current prediction so far and the leftover error (residual) the next tree must fix. */
+function RoundInputTable({
+  table,
+  round,
+  positive,
+  task,
+}: {
+  table: Record<string, number | string>[];
+  round: number;
+  positive?: string;
+  task: string;
+}) {
+  const featCols = Object.keys(table[0] ?? {}).filter(
+    (k) => !["actual", "current", "residual"].includes(k),
+  );
+  return (
+    <div className="rounded-lg border border-[#C9A227]/40 bg-[#FFFDF5] p-1.5">
+      <p className="mb-1 text-[10.5px] text-[#8a6d1a]">
+        {round === 0 ? (
+          <>Tree 1&apos;s input — everyone starts at the baseline; <b>residual</b> = truth − current guess:</>
+        ) : (
+          <>
+            The table AFTER tree {round} — <b>current</b> ={" "}
+            {task === "classification" ? `probability of ${positive ?? "positive"}` : "prediction"} so
+            far, <b>residual</b> = the error still left. THIS is what tree {round + 1} trains on:
+          </>
+        )}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-[10px]">
+          <thead>
+            <tr className="text-muted">
+              {featCols.map((c) => (
+                <th key={c} className="whitespace-nowrap px-1.5 py-0.5 text-left font-medium">{c}</th>
+              ))}
+              <th className="whitespace-nowrap px-1.5 py-0.5 text-left font-medium text-forest">actual</th>
+              <th className="whitespace-nowrap px-1.5 py-0.5 text-left font-medium text-[#B8860B]">current</th>
+              <th className="whitespace-nowrap px-1.5 py-0.5 text-left font-medium text-red-700">residual</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((row, i) => {
+              const resid = Number(row.residual);
+              return (
+                <tr key={i} className="border-t border-line/50">
+                  {featCols.map((c) => (
+                    <td key={c} className="whitespace-nowrap px-1.5 py-0.5 text-ink">{String(row[c])}</td>
+                  ))}
+                  <td className="whitespace-nowrap px-1.5 py-0.5 font-medium text-forest">{String(row.actual)}</td>
+                  <td className="whitespace-nowrap px-1.5 py-0.5 text-ink">{String(row.current)}</td>
+                  <td className={`whitespace-nowrap px-1.5 py-0.5 font-semibold ${Math.abs(resid) < 0.15 ? "text-green-700" : "text-red-600"}`}>
+                    {resid > 0 ? "+" : ""}
+                    {String(row.residual)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- split-scan: watch the tree choose its threshold ---------------- */
+
+const SCAN_MS = 4200;
+
+function ScanChart({ f, run }: { f: SplitScanFeature; run: number }) {
+  const [idx, setIdx] = useState(-1); // how far the sweep has reached (candidate index)
+  const cands = f.candidates;
+  const n = cands.length;
+
+  useEffect(() => {
+    let raf = 0;
+    let start: number | null = null;
+    const tick = (now: number) => {
+      if (start == null) start = now;
+      const p = Math.min(1, (now - start) / SCAN_MS);
+      setIdx(Math.floor(p * (n - 1)));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    setIdx(-1);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [run, n]);
+
+  const W = 360;
+  const H = 170;
+  const PL = 34;
+  const PR = 12;
+  const PT = 16;
+  const PB = 30;
+  const ts = cands.map((c) => c.t);
+  const [t0, t1] = [Math.min(...ts), Math.max(...ts)];
+  const gmax = Math.max(1e-9, ...cands.map((c) => c.gain));
+  const px = (t: number) => PL + ((t - t0) / (t1 - t0 || 1)) * (W - PL - PR);
+  const py = (g: number) => H - PB - (Math.max(0, g) / gmax) * (H - PT - PB);
+
+  // best candidate seen so far during the sweep
+  let bestSoFar = -1;
+  for (let i = 0; i <= idx && i < n; i++) {
+    if (bestSoFar < 0 || cands[i].gain > cands[bestSoFar].gain) bestSoFar = i;
+  }
+  const done = idx >= n - 1;
+  const winner = cands.reduce((a, b) => (b.gain > a.gain ? b : a), cands[0]);
+  const cur = idx >= 0 && idx < n ? cands[idx] : null;
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-2">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="split scan">
+        {/* axes */}
+        <line x1={PL} y1={H - PB} x2={W - PR} y2={H - PB} stroke="#C7D4CC" />
+        <line x1={PL} y1={PT} x2={PL} y2={H - PB} stroke="#C7D4CC" />
+        <text x={(PL + W - PR) / 2} y={H - 4} fontSize={8.5} fill="#7C8A80" textAnchor="middle">
+          candidate cut-point for {f.feature}
+        </text>
+        <text
+          x={10}
+          y={(PT + H - PB) / 2}
+          fontSize={8.5}
+          fill="#7C8A80"
+          textAnchor="middle"
+          transform={`rotate(-90 10 ${(PT + H - PB) / 2})`}
+        >
+          gain
+        </text>
+        {/* candidate dots — revealed as the scanner passes */}
+        {cands.map((c, i) => (
+          <circle
+            key={i}
+            cx={px(c.t)}
+            cy={py(c.gain)}
+            r={i === bestSoFar ? 4.5 : 3}
+            fill={i === bestSoFar ? "#6DB33F" : "#9DB8A8"}
+            opacity={i <= idx ? 1 : 0.12}
+          />
+        ))}
+        {/* scanning line */}
+        {cur && !done && (
+          <g>
+            <line x1={px(cur.t)} y1={PT} x2={px(cur.t)} y2={H - PB} stroke="#C9A227" strokeWidth={1.5} />
+            <text x={px(cur.t)} y={PT - 3} fontSize={8.5} fill="#8a6d1a" textAnchor="middle">
+              try ≤ {cur.t} → gain {cur.gain}
+            </text>
+          </g>
+        )}
+        {/* winner */}
+        {done && (
+          <g>
+            <circle cx={px(winner.t)} cy={py(winner.gain)} r={7} fill="none" stroke="#C9A227" strokeWidth={2.5} />
+            <text x={px(winner.t)} y={py(winner.gain) - 11} fontSize={9} fill="#8a6d1a" textAnchor="middle" fontWeight={700}>
+              chosen: {f.feature} ≤ {winner.t} (gain {winner.gain})
+            </text>
+          </g>
+        )}
+      </svg>
+      {cur && !done && (
+        <p className="px-1 text-[10px] text-muted">
+          splitting at {cur.t} puts {cur.n_left} rows on the yes-side, {cur.n_right} on the no-side
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SplitScanView({ scan }: { scan: SplitScan }) {
+  const [run, setRun] = useState(0);
+  const chosen = scan.features.find((f) => f.feature === scan.chosen_feature) ?? scan.features[0];
+  const others = scan.features.filter((f) => f !== chosen);
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-[11px] text-muted">
+          Before asking its first question, the tree <b>auditions every cut-point</b>: slide a
+          threshold across <b>{chosen.feature}</b>, and for each position measure the <b>gain</b> —
+          how much cleaner the two sides get. Watch it scan:
+        </p>
+        <button
+          onClick={() => setRun((r) => r + 1)}
+          className="ml-2 shrink-0 rounded border border-line px-2 py-0.5 text-[11px] text-forest hover:bg-bg"
+        >
+          ↻ replay
+        </button>
+      </div>
+      <ScanChart f={chosen} run={run} />
+      {others.length > 0 && (
+        <div className="mt-2 rounded-lg border border-line bg-white p-2">
+          <p className="mb-1 text-[11px] text-muted">
+            It auditioned other features the same way — their best splits scored lower, which is
+            exactly why the tree asked about <b className="text-forest">{chosen.feature}</b> first:
+          </p>
+          {[chosen, ...others].map((f) => (
+            <div key={f.feature} className="flex items-center gap-2 text-[11px]">
+              <span className="w-20 shrink-0 truncate text-muted">{f.feature}</span>
+              <div className="h-2.5 flex-1 rounded bg-bg">
+                <div
+                  className={`h-full rounded transition-all duration-700 ${f === chosen ? "bg-leaf" : "bg-leaf/40"}`}
+                  style={{
+                    width: `${Math.max(3, (f.best_gain / Math.max(1e-9, chosen.best_gain)) * 100)}%`,
+                  }}
+                />
+              </div>
+              <span className="w-24 shrink-0 text-right tabular-nums text-muted">
+                best gain {f.best_gain}
+                {f === chosen ? " 🏆" : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type TreeMode = "single" | "ensemble" | "scan";
+
 function ModeTabs({
   mode,
   setMode,
+  withScan,
 }: {
-  mode: "single" | "ensemble";
-  setMode: (m: "single" | "ensemble") => void;
+  mode: TreeMode;
+  setMode: (m: TreeMode) => void;
+  withScan?: boolean;
 }) {
+  const tabs: [TreeMode, string][] = [
+    ["single", "One decision tree"],
+    ["ensemble", "Boosting — 3 trees stacked"],
+  ];
+  if (withScan) tabs.push(["scan", "How a split is chosen"]);
   return (
-    <div className="mb-1.5 flex gap-1 text-[11px]">
-      {(
-        [
-          ["single", "One decision tree"],
-          ["ensemble", "Boosting — 3 trees stacked"],
-        ] as const
-      ).map(([m, label]) => (
+    <div className="mb-1.5 flex flex-wrap gap-1 text-[11px]">
+      {tabs.map(([m, label]) => (
         <button
           key={m}
           onClick={() => setMode(m)}
@@ -202,14 +422,24 @@ function ModeTabs({
 
 export function Train({ trace, hint }: TrainProps) {
   const hasEnsemble = !!trace.rounds?.length;
-  const [mode, setMode] = useState<"single" | "ensemble">(
+  const hasScan = !!(trace.scan && trace.scan.features?.length);
+  const [mode, setMode] = useState<TreeMode>(
     hasEnsemble && isBoostHint(hint) ? "ensemble" : "single",
   );
+
+  if (mode === "scan" && hasScan) {
+    return (
+      <div>
+        <ModeTabs mode={mode} setMode={setMode} withScan={hasScan} />
+        <SplitScanView scan={trace.scan as unknown as SplitScan} />
+      </div>
+    );
+  }
 
   if (mode === "ensemble" && hasEnsemble) {
     return (
       <div>
-        <ModeTabs mode={mode} setMode={setMode} />
+        <ModeTabs mode={mode} setMode={setMode} withScan={hasScan} />
         <p className="mb-1 text-[11px] text-muted">
           The REAL boosting ensemble fitted on this data. It starts from a baseline score of{" "}
           <b>{trace.baseline}</b>, then each tree is trained on the <b>mistakes left by the previous
@@ -219,9 +449,17 @@ export function Train({ trace, hint }: TrainProps) {
         <div className="space-y-2">
           {trace.rounds!.map((r, i) => (
             <div key={i}>
-              <p className="mb-0.5 text-[11px] font-medium text-forest">
+              {r.table && (
+                <RoundInputTable
+                  table={r.table}
+                  round={i}
+                  positive={trace.labels?.[1]}
+                  task={trace.task}
+                />
+              )}
+              <p className="mb-0.5 mt-1 text-[11px] font-medium text-forest">
                 Tree {i + 1}
-                {i > 0 && <span className="font-normal text-muted"> — fixes what trees 1…{i} still get wrong</span>}
+                {i > 0 && <span className="font-normal text-muted"> — trained on the residuals above (the leftover errors)</span>}
               </p>
               <TreeDiagram root={r.tree} />
             </div>
@@ -237,7 +475,7 @@ export function Train({ trace, hint }: TrainProps) {
 
   return (
     <div>
-      {hasEnsemble && <ModeTabs mode={mode} setMode={setMode} />}
+      {(hasEnsemble || hasScan) && <ModeTabs mode={mode} setMode={setMode} withScan={hasScan} />}
       <p className="mb-1 text-[11px] text-muted">
         A literal decision tree, grown from this data. Each box asks a yes/no question about ONE
         feature — chosen because it best separates the groups (<b>gain</b> = how much cleaner the
@@ -250,7 +488,7 @@ export function Train({ trace, hint }: TrainProps) {
 
 export function Test({ trace, row, hint }: TestProps) {
   const hasEnsemble = !!(trace.rounds?.length && row.rounds?.length);
-  const [mode, setMode] = useState<"single" | "ensemble">(
+  const [mode, setMode] = useState<TreeMode>(
     hasEnsemble && isBoostHint(hint) ? "ensemble" : "single",
   );
 

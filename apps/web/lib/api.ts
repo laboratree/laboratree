@@ -1325,6 +1325,8 @@ export type SeedResult = {
   survey_id: string;
   cohort_id: string;
   personas: number;
+  // one real artifact per NGO flow stage (keyed by template stage id)
+  stages?: Record<string, Record<string, unknown>>;
 };
 export const demoApi = {
   seed: (projectId: string, scenario = "ngo_education") =>

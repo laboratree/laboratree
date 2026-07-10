@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { ModelTrace, TestRow } from "@/lib/api";
+import { LossDescent, lossCurveOf } from "./loss-curve";
 import { ContribBlock, type TestProps, type TrainProps } from "./shared";
 
 /** Linear family — logistic/linear regression, SVM-style scoring, probit.
@@ -114,6 +116,77 @@ export function Train({ trace }: TrainProps) {
           <SigmoidGraph trace={trace} />
         </div>
       )}
+      {(() => {
+        const curve = lossCurveOf(trace);
+        return curve ? (
+          <div className="mt-2">
+            <p className="mb-1 text-[11px] text-muted">
+              How were the weights found? <b>Gradient descent</b> — start with random weights,
+              measure how wrong they are (the loss), and repeatedly nudge them downhill:
+            </p>
+            <LossDescent
+              curve={curve}
+              caption="a gradient-descent run recorded on this data — each step, the weights are nudged so the error shrinks"
+            />
+            <WeightEvolution trace={trace} />
+          </div>
+        ) : null;
+      })()}
+    </div>
+  );
+}
+
+/** The state BETWEEN training stages: the weights table at a few gradient-descent checkpoints —
+ *  start near zero, grow, settle. Click through the stages. */
+function WeightEvolution({ trace }: { trace: ModelTrace }) {
+  const stages = ((trace.series ?? {}) as {
+    weight_stages?: { epoch: number; loss: number; weights: { feature: string; weight: number }[] }[];
+  }).weight_stages;
+  const [i, setI] = useState(0);
+  if (!stages?.length) return null;
+  const st = stages[Math.min(i, stages.length - 1)];
+  const maxW = Math.max(0.001, ...stages.flatMap((s) => s.weights.map((w) => Math.abs(w.weight))));
+  return (
+    <div className="mt-2 rounded-lg border border-[#C9A227]/40 bg-[#FFFDF5] p-2">
+      <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
+        <span className="font-medium text-[#8a6d1a]">The weights themselves, mid-descent:</span>
+        {stages.map((s, j) => (
+          <button
+            key={j}
+            onClick={() => setI(j)}
+            className={`rounded-full px-2 py-0.5 ${
+              j === i ? "bg-forest text-white" : "border border-line text-forest hover:bg-bg"
+            }`}
+          >
+            step {s.epoch}
+          </button>
+        ))}
+        <span className="ml-auto text-muted">loss {st.loss}</span>
+      </div>
+      <div className="space-y-0.5">
+        {st.weights.map((w) => (
+          <div key={w.feature} className="flex items-center gap-2 text-[10.5px]">
+            <span className="w-24 shrink-0 truncate text-muted">{w.feature}</span>
+            <div className="relative h-2.5 flex-1 rounded bg-bg">
+              <div className="absolute left-1/2 top-0 h-2.5 w-px bg-line" />
+              <div
+                className="absolute top-0 h-2.5 rounded transition-all duration-500"
+                style={{
+                  left: w.weight >= 0 ? "50%" : undefined,
+                  right: w.weight < 0 ? "50%" : undefined,
+                  width: `${(Math.abs(w.weight) / maxW) * 46}%`,
+                  background: w.weight >= 0 ? "#6DB33F" : "#C0392B",
+                }}
+              />
+            </div>
+            <span className="w-12 shrink-0 text-right text-forest">{w.weight}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1 text-[10px] text-muted">
+        step {stages[0].epoch}: barely-formed weights, high loss → step {stages[stages.length - 1].epoch}:
+        settled weights, low loss. Every step is one downhill nudge from the chart above.
+      </p>
     </div>
   );
 }

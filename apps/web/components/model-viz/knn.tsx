@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ModelTrace, TestRow } from "@/lib/api";
 import type { TestProps, TrainProps } from "./shared";
 
@@ -98,23 +99,87 @@ export function Train({ trace }: TrainProps) {
 }
 
 export function Test({ trace, row }: TestProps) {
+  const nbs = row.neighbors ?? [];
+  const [shown, setShown] = useState(0); // vote builds up neighbor by neighbor
+  const key = JSON.stringify(row.values);
+
+  useEffect(() => {
+    setShown(0);
+    const id = setInterval(() => {
+      setShown((s) => {
+        if (s >= nbs.length) {
+          clearInterval(id);
+          return s;
+        }
+        return s + 1;
+      });
+    }, 650);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, nbs.length]);
+
+  // running tally over the first `shown` neighbors
+  const tally = new Map<string, number>();
+  for (let i = 0; i < shown; i++) {
+    const l = String(nbs[i].label);
+    tally.set(l, (tally.get(l) ?? 0) + 1);
+  }
+  const leader = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+  const done = shown >= nbs.length;
+
   return (
     <div className="space-y-2">
       <Scatter trace={trace} row={row} />
-      {row.neighbors && (
+      {nbs.length > 0 && (
         <div className="rounded-lg border border-line bg-white p-2 text-[11px]">
-          <p className="mb-1 text-muted">
-            the {row.neighbors.length} nearest memorized rows (smaller distance = more similar):
-          </p>
-          {row.neighbors.map((nb, i) => (
-            <div key={i} className="flex justify-between border-t border-line/50 py-0.5 first:border-t-0">
+          <div className="mb-1 flex items-center justify-between">
+            <p className="text-muted">
+              the vote builds up, closest neighbor first (smaller distance = more similar):
+            </p>
+            <button
+              onClick={() => setShown(0)}
+              className="rounded border border-line px-1.5 py-0.5 text-[10px] text-forest hover:bg-bg"
+            >
+              ↻ replay
+            </button>
+          </div>
+          {nbs.map((nb, i) => (
+            <div
+              key={i}
+              className={`flex justify-between border-t border-line/50 py-0.5 transition-all duration-500 first:border-t-0 ${
+                i < shown ? "opacity-100" : "opacity-15"
+              }`}
+            >
               <span className="text-muted">#{i + 1} · distance {nb.distance}</span>
-              <span className="font-medium text-forest">{String(nb.label)}</span>
+              <span className="font-medium text-forest">
+                votes <b>{String(nb.label)}</b>
+              </span>
             </div>
           ))}
           <p className="mt-1 rounded bg-leaf/10 p-1.5">
-            {trace.task === "classification" ? "majority vote → " : "average → "}
-            <b className="text-forest">{String(row.predicted)}</b>
+            {trace.task === "classification" ? (
+              <>
+                running tally:{" "}
+                {[...tally.entries()].map(([l, n]) => (
+                  <span key={l} className="mr-2">
+                    {l}: <b>{n}</b>
+                  </span>
+                ))}
+                {done ? (
+                  <>
+                    → majority → <b className="text-forest">{String(row.predicted)}</b>
+                  </>
+                ) : leader ? (
+                  <span className="text-muted">({leader[0]} leading…)</span>
+                ) : (
+                  <span className="text-muted">(waiting for the first neighbor…)</span>
+                )}
+              </>
+            ) : (
+              <>
+                average of the neighbors → <b className="text-forest">{String(row.predicted)}</b>
+              </>
+            )}
           </p>
         </div>
       )}

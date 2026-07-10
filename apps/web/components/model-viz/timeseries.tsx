@@ -74,9 +74,56 @@ export function Train({ trace }: TrainProps) {
   );
 }
 
+/** The sliding window made literal: the recent stretch of the series with THIS step's input
+ *  window highlighted gold and the point being predicted outlined — step to the next row and
+ *  watch the window slide one step forward. */
+function WindowStrip({ trace, row }: { trace: ModelTrace; row: TestProps["row"] }) {
+  const s = (trace.series ?? {}) as Series;
+  const hist = s.history ?? [];
+  const split = s.split ?? hist.length;
+  const lags = trace.features.length;
+  const j = Math.max(0, (trace.test_rows ?? []).indexOf(row));
+  const pos = split + j; // index in `hist` of the value being predicted
+  const start = Math.max(0, pos - 14);
+  const seg = hist.slice(start, Math.min(hist.length, pos + 2));
+  if (!seg.length) return null;
+  const [lo, hi] = [Math.min(...seg), Math.max(...seg)];
+  const barH = (v: number) => 8 + ((v - lo) / (hi - lo || 1)) * 34;
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-2">
+      <div className="flex items-end gap-[3px]" style={{ height: 52 }}>
+        {seg.map((v, i) => {
+          const gi = start + i;
+          const inWindow = gi >= pos - lags && gi < pos;
+          const isPred = gi === pos;
+          return (
+            <div
+              key={gi}
+              title={`t=${gi}: ${v}`}
+              className="flex-1 rounded-t transition-all duration-500"
+              style={{
+                height: barH(v),
+                background: isPred ? "transparent" : inWindow ? "#C9A227" : "#C7D4CC",
+                border: isPred ? "2px dashed #14342A" : undefined,
+              }}
+            />
+          );
+        })}
+      </div>
+      <p className="mt-1 text-[10px] text-muted">
+        <span className="text-[#8a6d1a]">■ gold = the {lags}-value window</span> feeding this
+        prediction · <span className="text-ink">▢ dashed = the value being predicted</span>. Move to
+        the next test row and the window slides one step forward — that&apos;s forecasting.
+      </p>
+    </div>
+  );
+}
+
 export function Test(props: TestProps) {
   return (
     <div className="space-y-2">
+      <WindowStrip trace={props.trace} row={props.row} />
       <p className="text-[11px] text-muted">
         this step is predicted only from its recent past (lags × learned weights):
       </p>

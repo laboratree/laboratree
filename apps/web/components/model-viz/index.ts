@@ -15,6 +15,7 @@ import * as knn from "./knn";
 import * as linear from "./linear";
 import * as nn from "./nn";
 import * as timeseries from "./timeseries";
+import * as transformer from "./transformer";
 import * as trees from "./trees";
 
 export type FamilyStages = {
@@ -28,6 +29,7 @@ const FAMILIES: Record<string, FamilyStages> = {
   nn,
   knn,
   timeseries,
+  transformer,
   clustering,
   anomaly,
 };
