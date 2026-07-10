@@ -1,7 +1,10 @@
-"""Pluggable LLM client — the agents' brain. Supports Azure OpenAI and plain OpenAI.
+"""Pluggable LLM client — the agents' brain, routed through the LiteLLM gateway.
 
-Azure is reached through its OpenAI-compatible ``/openai/v1`` route, which works for both
-gpt-5.x deployments and serverless models (e.g. DeepSeek). Swapping providers is a config flip.
+One ``LLMClient`` interface (``complete``/``embed``/``model_for``/``configured``) over any
+provider LiteLLM speaks: Azure OpenAI, OpenAI, and every OpenAI-compatible host (OpenRouter →
+Hermes, DeepSeek, Together, self-hosted vLLM), plus natively non-OpenAI providers (Anthropic,
+Gemini, Bedrock) by model id. Provider choice stays a config flip; per-call observability
+(``record_llm_call``) is preserved — every completion/embedding lands in the llm_calls ledger.
 """
 
 from __future__ import annotations
@@ -11,22 +14,27 @@ import time
 from functools import lru_cache
 from typing import Any
 
-from openai import BadRequestError, OpenAI
+import litellm
 
 from ..config import settings
 from .observability import record_llm_call
 
 log = logging.getLogger(__name__)
 
+# Unsupported params (e.g. gpt-5.x reasoning models rejecting a non-default temperature) are
+# dropped per-provider instead of failing the call.
+litellm.drop_params = True
+litellm.suppress_debug_info = True
 
-def resolve_azure_api_version(base_url: str, configured: str) -> str:
-    """The /openai/v1 route only accepts 'preview'/'latest'; dated versions 400.
+DEFAULT_NUM_RETRIES = 2
 
-    Falls back to the configured value for the legacy deployments route.
-    """
-    if base_url.rstrip("/").endswith("/openai/v1"):
-        return "preview"
-    return configured
+_KNOWN_PREFIXES = ("openai/", "azure/", "openrouter/", "anthropic/", "gemini/", "bedrock/",
+                   "vertex_ai/", "mistral/", "groq/", "deepseek/")
+
+
+def azure_resource_root(endpoint: str) -> str:
+    """LiteLLM's Azure provider wants the resource root — strip a trailing /openai/v1 route."""
+    return endpoint.rstrip("/").removesuffix("/openai/v1")
 
 
 class LLMClient:
@@ -35,34 +43,43 @@ class LLMClient:
     def __init__(self) -> None:
         self.provider = settings.llm_provider.lower()
         if self.provider == "azure":
-            base_url = settings.azure_openai_v1_endpoint.rstrip("/")
-            api_version = resolve_azure_api_version(base_url, settings.azure_openai_api_version)
-            self._client = OpenAI(
-                api_key=settings.azure_openai_api_key,
-                base_url=base_url,
-                default_query={"api-version": api_version},
-            )
-            self._chat_model = settings.azure_openai_deployment_name
-            self._embed_model = settings.azure_openai_embedding_deployment
+            self._api_key = settings.azure_openai_api_key
+            self._api_base: str | None = azure_resource_root(settings.azure_openai_v1_endpoint)
+            self._api_version: str | None = settings.azure_openai_api_version
+            self._chat_model = f"azure/{settings.azure_openai_deployment_name}"
+            self._embed_model = f"azure/{settings.azure_openai_embedding_deployment}"
             self._temperature: float | None = settings.azure_openai_temperature
         else:
-            # base_url lets us target any OpenAI-compatible provider (DeepSeek, DeepInfra, OpenRouter,
-            # Together, Fireworks, self-hosted vLLM). Blank → the real OpenAI endpoint.
-            self._client = OpenAI(
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url or None,
-            )
-            self._chat_model = settings.openai_model
-            self._embed_model = settings.openai_embedding_model
+            self._api_key = settings.openai_api_key
+            self._api_base = settings.openai_base_url or None
+            self._api_version = None
+            self._chat_model = self._qualify(settings.openai_model)
+            self._embed_model = self._qualify(settings.openai_embedding_model)
             self._temperature = None
+
+    def _qualify(self, model: str) -> str:
+        """Route bare model ids at a custom base_url through LiteLLM's openai-compatible path."""
+        if self.provider == "azure":
+            return model if model.startswith("azure/") else f"azure/{model}"
+        if self._api_base and not model.startswith(_KNOWN_PREFIXES):
+            return f"openai/{model}"
+        return model
 
     def model_for(self, role: str = "default") -> str:
         """Role-specific model override, falling back to the default chat model."""
         if role == "generation" and settings.generation_model:
-            return settings.generation_model
+            return self._qualify(settings.generation_model)
         if role == "reasoning" and settings.reasoning_model:
-            return settings.reasoning_model
+            return self._qualify(settings.reasoning_model)
         return self._chat_model
+
+    def _provider_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"api_key": self._api_key, "num_retries": DEFAULT_NUM_RETRIES}
+        if self._api_base:
+            kwargs["api_base"] = self._api_base
+        if self._api_version:
+            kwargs["api_version"] = self._api_version
+        return kwargs
 
     def complete(
         self,
@@ -76,21 +93,15 @@ class LLMClient:
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        params: dict[str, Any] = {"model": self.model_for(role), "messages": messages}
+        params: dict[str, Any] = {
+            "model": self.model_for(role), "messages": messages, **self._provider_kwargs(),
+        }
         if self._temperature is not None:
             params["temperature"] = self._temperature
         params.update(kw)
         start = time.perf_counter()
         try:
-            try:
-                resp = self._client.chat.completions.create(**params)
-            except BadRequestError as exc:
-                # gpt-5.x reasoning models reject a non-default temperature; retry without.
-                if "temperature" in str(exc) and "temperature" in params:
-                    params.pop("temperature")
-                    resp = self._client.chat.completions.create(**params)
-                else:
-                    raise
+            resp = litellm.completion(**params)
         except Exception as exc:
             self._trace(params.get("model", ""), role, None,
                         (time.perf_counter() - start) * 1000, "error", str(exc))
@@ -102,14 +113,16 @@ class LLMClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         start = time.perf_counter()
         try:
-            resp = self._client.embeddings.create(model=self._embed_model, input=texts)
+            resp = litellm.embedding(model=self._embed_model, input=texts,
+                                     **self._provider_kwargs())
         except Exception as exc:
             self._trace(self._embed_model, "embed", None,
                         (time.perf_counter() - start) * 1000, "error", str(exc))
             raise
         self._trace(self._embed_model, "embed", getattr(resp, "usage", None),
                     (time.perf_counter() - start) * 1000, "ok", None)
-        return [item.embedding for item in resp.data]
+        return [item["embedding"] if isinstance(item, dict) else item.embedding
+                for item in resp.data]
 
     def _trace(self, model, role, usage, latency_ms, status, error) -> None:
         pt = int(getattr(usage, "prompt_tokens", 0) or 0)

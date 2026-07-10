@@ -47,6 +47,9 @@ dependencies = [
     # workspace
     "laboratree-plugin-sdk",
     "torch>=2.12.1",
+    "xgboost>=3.3.0",
+    "arch>=8.0.0",
+    "litellm~=1.73.6",
 ]
 
 [dependency-groups]
