@@ -20,7 +20,9 @@ from ..core.deps import Principal, PrincipalDep, SessionDep, require_role
 from ..core.llm.context import use_llm_context
 from ..fieldwork.models import Survey
 from ..labs.synth import llm as synth_llm
+from ..labs.synth.graph_mirror import mirror_cohort_graph
 from ..labs.synth.personas import build_personas
+from ..labs.synth.social import build_social_graph, neighbour_opinion, social_context
 from ..labs.synth.traits import assign_traits, bio_sketch
 from ..labs.synth.twin import aggregate_dry_run, simulate_persona_wave
 from ..personas.models import Persona, PersonaCohort
@@ -87,20 +89,25 @@ async def create_cohort(
     """Build + persist a cohort of stable-trait personas from target margins."""
     await _require_project(session, principal, project_id)
     skeletons = build_personas(body.n, body.margins)
+    for skeleton in skeletons:  # give each a stable handle before wiring the social graph
+        skeleton["handle"] = str(skeleton.get("id", ""))
+    edges = build_social_graph(skeletons)
     cohort = PersonaCohort(org_id=principal.org_id, project_id=project_id,
-                           name=body.name, margins=body.margins, n=len(skeletons), waves=0)
+                           name=body.name, margins=body.margins, graph=edges,
+                           n=len(skeletons), waves=0)
     session.add(cohort)
     await session.flush()  # assign cohort.id
     for skeleton in skeletons:
         traits = assign_traits(skeleton)
         session.add(Persona(
-            org_id=principal.org_id, cohort_id=cohort.id, handle=str(skeleton.get("id", "")),
+            org_id=principal.org_id, cohort_id=cohort.id, handle=skeleton["handle"],
             attributes=skeleton.get("attributes") or {}, traits=traits,
             bio=bio_sketch(skeleton, traits), memory=[],
         ))
     await session.commit()
     await session.refresh(cohort)
-    log.info("cohort %s created: %d personas", cohort.id, cohort.n)
+    await mirror_cohort_graph(cohort.id, principal.org_id, skeletons, edges)  # best-effort
+    log.info("cohort %s created: %d personas, %d edges", cohort.id, cohort.n, len(edges))
     return cohort
 
 
@@ -143,6 +150,19 @@ async def cohort_personas(
     ]
 
 
+@router.get("/persona-cohorts/{cohort_id}/graph")
+async def cohort_graph(
+    cohort_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
+) -> dict[str, Any]:
+    """The cohort's social network (nodes + homophily edges) for visualization."""
+    cohort = await _require_cohort(session, principal, cohort_id)
+    personas = await _cohort_personas(session, cohort_id)
+    return {
+        "nodes": [{"handle": p.handle, "attributes": p.attributes} for p in personas],
+        "edges": cohort.graph or [],
+    }
+
+
 @router.post("/persona-cohorts/{cohort_id}/run")
 async def run_wave(
     cohort_id: uuid.UUID,
@@ -161,13 +181,23 @@ async def run_wave(
         raise HTTPException(status_code=409, detail="cohort has no personas")
 
     wave = cohort.waves + 1
+    # each persona's neighbours' LAST-wave answers become social context (diffusion, no intra-wave loop)
+    last_answers = {
+        p.handle: (p.memory[-1]["answers"] if p.memory else {}) for p in personas
+    }
+    edges = cohort.graph or []
     persona_dicts = [
-        {"handle": p.handle, "bio": p.bio, "attributes": p.attributes, "memory": p.memory or []}
+        {"handle": p.handle, "bio": p.bio, "attributes": p.attributes, "memory": p.memory or [],
+         "social_context": social_context(neighbour_opinion(p.handle, edges, last_answers))}
         for p in personas
     ]
 
     def _run() -> list[dict[str, Any]]:
-        return [simulate_persona_wave(structure, pd, synth_llm.default_complete) for pd in persona_dicts]
+        return [
+            simulate_persona_wave(structure, pd, synth_llm.default_complete,
+                                  social_context=pd["social_context"])
+            for pd in persona_dicts
+        ]
 
     with use_llm_context("synth", "persona_wave", project_id=cohort.project_id, org_id=principal.org_id):
         results = await asyncio.to_thread(_run)

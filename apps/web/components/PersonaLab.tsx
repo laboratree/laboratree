@@ -93,6 +93,7 @@ export default function PersonaLab({ projectId }: { projectId: string }) {
 
 function CohortDetail({ cohortId, projectId, onBack }: { cohortId: string; projectId: string; onBack: () => void }) {
   const [personas, setPersonas] = useState<PersonaRow[]>([]);
+  const [edgeCount, setEdgeCount] = useState(0);
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [surveyId, setSurveyId] = useState("");
   const [report, setReport] = useState<(TwinDryRunReport & { wave: number }) | null>(null);
@@ -101,6 +102,7 @@ function CohortDetail({ cohortId, projectId, onBack }: { cohortId: string; proje
 
   const load = useCallback(async () => {
     setPersonas(await personasApi.personas(cohortId));
+    setEdgeCount((await personasApi.graph(cohortId)).edges.length);
     const s = await surveysApi.list(projectId);
     setSurveys(s);
     if (s.length && !surveyId) setSurveyId(s[0].id);
@@ -157,6 +159,10 @@ function CohortDetail({ cohortId, projectId, onBack }: { cohortId: string; proje
       </Card>
 
       <Card title={`Personas (${personas.length})`}>
+        <p className="mb-2 text-xs text-ink/50">
+          🕸 Social network: {edgeCount} connections (homophily — similar personas link up). Neighbours&apos;
+          prior-wave answers influence each persona, so opinions diffuse across waves.
+        </p>
         <div className="max-h-96 space-y-2 overflow-auto">
           {personas.map((p) => (
             <div key={p.id} className="rounded-xl border border-line p-3">

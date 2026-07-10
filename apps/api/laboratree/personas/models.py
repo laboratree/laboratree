@@ -21,6 +21,7 @@ class PersonaCohort(PkMixin, OrgScopedMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), default="Cohort")
     margins: Mapped[dict] = mapped_column(JSONB, default=dict)   # {dim: {cat: share}}
+    graph: Mapped[list] = mapped_column(JSONB, default=list)     # social edges [{a,b,weight}]
     n: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     waves: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # surveys run so far
 

@@ -1336,6 +1336,10 @@ export const personasApi = {
   createCohort: (projectId: string, name: string, n: number, margins: Record<string, Record<string, number>>) =>
     apiPost<PersonaCohort>(`/api/projects/${projectId}/persona-cohorts`, { name, n, margins }),
   personas: (cohortId: string) => apiGet<PersonaRow[]>(`/api/persona-cohorts/${cohortId}`),
+  graph: (cohortId: string) =>
+    apiGet<{ nodes: { handle: string; attributes: Record<string, string> }[]; edges: { a: string; b: string; weight: number }[] }>(
+      `/api/persona-cohorts/${cohortId}/graph`,
+    ),
   runWave: (cohortId: string, surveyId: string) =>
     apiPost<TwinDryRunReport & { wave: number }>(`/api/persona-cohorts/${cohortId}/run`, {
       survey_id: surveyId,

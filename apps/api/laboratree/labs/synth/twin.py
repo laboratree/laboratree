@@ -82,13 +82,15 @@ def _memory_block(persona: dict[str, Any]) -> str:
 
 
 def simulate_persona_wave(
-    structure: dict[str, Any], persona: dict[str, Any], complete_fn: CompleteFn
+    structure: dict[str, Any], persona: dict[str, Any], complete_fn: CompleteFn,
+    *, social_context: str = "",
 ) -> dict[str, Any]:
-    """Simulate a *persisted* persona taking a survey, conditioned on its bio + prior waves."""
+    """Simulate a persisted persona, conditioned on its bio, prior waves, and social circle."""
     bio = persona.get("bio") or describe(persona)
     prompt = (
         f"You are this respondent: {bio}\n\n"
         f"{_memory_block(persona)}"
+        f"{social_context}"
         f"Survey questions:\n{_questions_block(structure)}\n\n"
         "Take the survey now, in character and consistent with your past answers."
     )
