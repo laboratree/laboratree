@@ -5,11 +5,9 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
-
 from laboratree.labs.paper.card import classify_paper, generate_card, normalize_card
 from laboratree.labs.paper.experiment.demo import generate_demo_dataset
 from laboratree.main import app
-
 
 # ---------------- classification + card shapes ----------------
 

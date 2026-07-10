@@ -7,10 +7,13 @@ by both the Signal API and the Paper Lab's ingestion.
 from __future__ import annotations
 
 import io
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -95,8 +98,8 @@ def extract_pdf(name: str, data: bytes) -> ExtractResult:
 
             if ocr_available():
                 texts = ocr_pdf_pages(data)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("OCR fallback for image-only PDF %r failed; no text extracted: %s", name, exc)
     return ExtractResult(source=name, tables=tables, texts=texts)
 
 

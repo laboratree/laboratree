@@ -334,6 +334,47 @@ export type TestRow = {
   boost_pred?: number | string;
 };
 export type ScatterPoint = { x: number; y: number; label: number | string };
+/* ---- exact-math boosting (viz/xgboost.py) ---- */
+export type NodeStats = { n: number; sum_g: number; sum_h: number; similarity: number };
+export type SplitTrial = {
+  feature: string;
+  threshold: number;
+  gain: number; // sim_L + sim_R − sim_parent − γ
+  left: NodeStats;
+  right: NodeStats;
+  eligible: boolean;
+  kept: boolean;
+};
+export type XGBNode = {
+  id: string; // "r", "rL", "rLR" …
+  depth: number;
+  stats: NodeStats;
+  trials: SplitTrial[];
+  feature?: string | null;
+  threshold?: number | null;
+  gain?: number | null;
+  pruned: boolean;
+  leaf: boolean;
+  value?: number | null; // leaf output −Σg/(Σh+λ)
+  left?: XGBNode | null;
+  right?: XGBNode | null;
+};
+export type XGBRound = {
+  index: number;
+  table: Record<string, number | string>[]; // {features…, actual, current, residual, g, h}
+  root: XGBNode;
+};
+export type BoostingTrace = {
+  objective: string;
+  base_score: number;
+  eta: number;
+  reg_lambda: number;
+  gamma: number;
+  min_child_weight: number;
+  trial_features: string[];
+  rounds: XGBRound[];
+  positive_label?: string | null;
+};
 export type ModelTrace = {
   family: string;
   target: string;
@@ -360,6 +401,7 @@ export type ModelTrace = {
   } | null;
   points?: ScatterPoint[] | null; // knn/clustering/anomaly — 2-D map of training rows
   series?: Record<string, unknown> | null; // family extras (axes, k, AR coefs, history…)
+  boosting?: BoostingTrace | null; // exact-math xgboost trace (every trial + residual table)
   test_rows?: TestRow[] | null;
   param_spec?: ParamSpec[] | null; // tunable hyperparameters the UI renders (with live values)
   params?: Record<string, number | string> | null; // the values used to fit
@@ -397,6 +439,165 @@ export type ParamSpec = {
   options?: string[];
   help?: string;
 };
+/* ---- guided model lessons (mirrors labs/modeling/lessons/schema.py) ---- */
+export type LessonSymbol = { sym: string; means: string };
+export type LessonMathBlock = {
+  name: string;
+  formula: string; // KaTeX source (render with Tex)
+  plain: string;
+  symbols: LessonSymbol[];
+  worked: string; // worked example with the live dataset's numbers
+};
+export type LessonTable = {
+  columns: string[];
+  rows: Record<string, number | string>[];
+  target_col?: string | null;
+  highlight_cols: string[];
+  caption: string;
+};
+export type LessonAnim = {
+  kind: string; // StageRouter key: "data-table" | "legacy-train" | "split-trials" | …
+  ref: Record<string, unknown>; // pointer into lesson.trace
+  substeps: number; // micro-scrub granularity inside this step
+};
+export type ExamQA = { q: string; a: string };
+export type LessonStep = {
+  id: string;
+  narration: string;
+  duration_ms: number; // at 1x speed
+  math: LessonMathBlock[];
+  table?: LessonTable | null;
+  anim?: LessonAnim | null;
+  widget?: string | null;
+  quiz: ExamQA[]; // self-check flip-cards (the "quiz" stage)
+};
+export type LessonChapter = { id: string; title: string; kicker: string; steps: LessonStep[] };
+export type FactsAlternative = { model: string; prefer_when: string };
+export type FactsHyperparam = { name: string; plain: string; effect: string; typical_range: string };
+export type ModelFacts = {
+  key: string;
+  display_name: string;
+  family: string;
+  one_liner: string;
+  pros: string[];
+  cons: string[];
+  limitations: string[];
+  use_when: string[];
+  alternatives: FactsAlternative[];
+  hyperparameters: FactsHyperparam[];
+  applications: string[]; // "in the wild" case studies
+  edge_cases: string[]; // gotchas: missing values, imbalance, extrapolation…
+  exam_questions: ExamQA[];
+};
+/* ---- real per-algorithm clustering mechanics in trace.series.mechanism ---- */
+export type DbscanPoint = { x: number; y: number; cluster: number; role: string; step: number };
+export type GmmPoint = { x: number; y: number; cluster: number; resp: number[] };
+export type GmmEllipse = { cx: number; cy: number; rx: number; ry: number; angle: number };
+export type DendroMerge = { a: number; b: number; height: number; size: number; node: number };
+export type SpectralPoint = { x: number; y: number; ex: number; ey: number; cluster: number };
+export type ClusterMechanism =
+  | { kind: "dbscan"; eps: number; min_samples: number; points: DbscanPoint[]; n_clusters: number; n_noise: number; total_steps: number }
+  | { kind: "gmm"; points: GmmPoint[]; ellipses: GmmEllipse[]; k: number }
+  | { kind: "hierarchical"; linkage: string; n_leaves: number; merges: DendroMerge[]; points: { x: number; y: number; cluster: number }[] }
+  | { kind: "spectral"; points: SpectralPoint[]; k: number };
+
+/* ---- real per-algorithm anomaly mechanics in trace.series.mechanism ---- */
+export type IforestPoint = { x: number; y: number; depth: number; anomaly: boolean };
+export type LofPoint = { x: number; y: number; lof: number; anomaly: boolean };
+export type OcsvmPoint = { x: number; y: number; anomaly: boolean };
+export type AnomalyMechanism =
+  | { kind: "isolation_forest"; points: IforestPoint[]; c_n: number; hist: number[]; edges: number[] }
+  | { kind: "lof"; k: number; points: LofPoint[]; focus: { x: number; y: number; lof: number; radius: number; neighbors: { x: number; y: number }[] } }
+  | { kind: "one_class_svm"; nu: number; grid: number[][]; gx: number[]; gy: number[]; points: OcsvmPoint[] };
+
+/* ---- causal-inference mechanics (viz/causal.py) in trace.series.mechanism ---- */
+export type RctMech = {
+  kind: "rct"; unit: string; true_effect: number; treated_mean: number; control_mean: number;
+  ate: number; se: number; ci_low: number; ci_high: number; p_value: number;
+  n_treated: number; n_control: number; treated_pts: number[]; control_pts: number[];
+};
+export type DidMech = {
+  kind: "did"; unit: string; true_effect: number; treated_pre: number; treated_post: number;
+  control_pre: number; control_post: number; did_effect: number; p_value: number;
+};
+export type IvMech = {
+  kind: "iv"; unit: string; true_effect: number; first_stage_slope: number; first_stage_F: number;
+  iv_effect: number; naive_ols_effect: number; p_value: number; weak_instrument: boolean;
+};
+export type RddMech = {
+  kind: "rdd"; unit: string; true_effect: number; rd_effect: number; p_value: number;
+  jump_lo: number; jump_hi: number; left: { r: number; y: number }[]; right: { r: number; y: number }[];
+};
+export type CausalMechanism = RctMech | DidMech | IvMech | RddMech;
+/* ---- volatility mechanics (viz/volatility.py) ---- */
+export type VolatilityMechanism = {
+  kind: "arch" | "garch"; returns: number[]; vol: number[]; sq_returns: number[];
+  omega: number; alpha: number; beta: number; persistence: number; aic: number;
+};
+
+/** Inference layer emitted by the econometrics tracer in trace.series.inference. */
+export type InferenceRow = {
+  feature: string;
+  coef: number;
+  se: number;
+  stat: number; // t (OLS) or z (GLM)
+  p: number;
+  ci_lo: number;
+  ci_hi: number;
+  exp_coef?: number; // odds/rate ratio for logit/poisson
+};
+export type InferenceTable = {
+  kind: string; // "ols" | "logit" | "probit" | "poisson"
+  stat_name: string;
+  exp_reading?: string | null;
+  n: number;
+  fit: { name: string; value: number };
+  rows: InferenceRow[];
+};
+export type Lesson = {
+  model: string; // resolved lesson key, e.g. "xgboost"
+  family: string; // viz family of the embedded trace (drives stage components)
+  title: string;
+  target: string;
+  task: string;
+  chapters: LessonChapter[];
+  trace: ModelTrace; // ONE embedded trace; anim directives point into it
+  facts?: ModelFacts | null;
+  param_spec?: ParamSpec[] | null;
+  params?: Record<string, number | string> | null;
+  total_ms: number;
+};
+export type LessonCatalogEntry = {
+  key: string;
+  component_id: string;
+  display_name: string;
+  group: string;
+  family: string;
+  one_liner: string;
+  task: string;
+  has_deep_lesson: boolean;
+};
+export type DatasetSummary = {
+  id: string;
+  name: string;
+  n_rows?: number | null;
+  n_cols?: number | null;
+  synthetic: boolean;
+};
+export type ExampleMeta = { model: string; name: string; target: string; task: string };
+/* ---- least-squares fit geometry (viz/linear.py, regression) in trace.series.regression_fit ---- */
+export type RegressionFit = {
+  feature: string;
+  target: string;
+  slope: number;
+  intercept: number;
+  mean_y: number;
+  sse_line: number;
+  sse_mean: number;
+  r2: number;
+  points: { x: number; y: number; yhat: number }[];
+};
+
 export type FSHabitat = { selected: string[]; fitness: number };
 export type FSGeneration = { habitats: FSHabitat[]; best_fitness: number };
 export type FeatureSelectionTrace = {
@@ -716,6 +917,25 @@ export const Api = {
       `/api/datasets/${datasetId}/model-trace?target=${encodeURIComponent(target)}&family=${family}`,
       { params: params ?? {} },
     ),
+  modelLesson: (
+    datasetId: string,
+    target: string,
+    model: string,
+    params?: Record<string, number | string | string[]>,
+  ) =>
+    apiPost<Lesson>(
+      `/api/datasets/${datasetId}/model-lesson?target=${encodeURIComponent(target)}&model=${encodeURIComponent(model)}`,
+      { params: params ?? {} },
+    ),
+  modelCatalog: () => apiGet<LessonCatalogEntry[]>(`/api/models/catalog`),
+  modelExample: (model: string) =>
+    apiGet<ExampleMeta>(`/api/models/${encodeURIComponent(model)}/example`),
+  modelExampleLesson: (model: string, params?: Record<string, number | string | string[]>) =>
+    apiPost<Lesson>(`/api/models/${encodeURIComponent(model)}/example-lesson`, {
+      params: params ?? {},
+    }),
+  projectDatasets: (projectId: string) =>
+    apiGet<DatasetSummary[]>(`/api/projects/${projectId}/datasets`),
   featureSelection: (datasetId: string, target: string) =>
     apiPost<FeatureSelectionTrace>(
       `/api/datasets/${datasetId}/feature-selection?target=${encodeURIComponent(target)}`,
@@ -836,4 +1056,366 @@ export type RunPreview = {
   run: { id: string; status: string; repro_manifest: Record<string, unknown> };
   evidence_count: number;
   preview: Record<string, unknown>;
+};
+
+// ---------------- Field Lab (surveys) ----------------
+export type QuestionType = "single" | "multi" | "scale" | "open_text" | "number";
+export type FieldQuestion = {
+  id: string;
+  type: QuestionType;
+  text: string;
+  required?: boolean;
+  options?: string[];
+  scale?: { min: number; max: number; labels?: string[] };
+};
+export type SurveySection = { id: string; title: string; questions: FieldQuestion[] };
+export type LogicRule = {
+  if: { qid: string; op: "eq" | "ne" | "gt" | "lt" | "in"; value: unknown };
+  then: { action: "skip_to" | "screen_out"; target?: string };
+};
+export type SurveyStructure = { sections: SurveySection[]; logic: LogicRule[] };
+export type SurveyStatus = "draft" | "live" | "paused" | "closed";
+export type QuotaCell = {
+  id?: string;
+  name: string;
+  conditions: { qid: string; value: unknown }[];
+  target: number;
+  current?: number;
+};
+export type Prereg = {
+  hypotheses?: string;
+  planned_analyses?: string[];
+  frozen_at?: string | null;
+  structure_hash?: string | null;
+};
+export type Survey = {
+  id: string;
+  project_id: string;
+  title: string;
+  status: SurveyStatus;
+  structure: SurveyStructure;
+  prereg?: Prereg;
+  version: number;
+  public_token: string | null;
+  quotas: QuotaCell[];
+  created_at: string;
+};
+export type SurveyMonitor = {
+  completes: number;
+  in_progress: number;
+  screened_out: number;
+  quota_full: number;
+  flagged: number;
+  quotas: { name: string; target: number; current: number }[];
+  dropoff: { qid: string; reached: number; answered: number }[];
+};
+export type DirectorFinding = {
+  kind: string;
+  severity: "high" | "medium";
+  message: string;
+  proposal: string;
+  detail: Record<string, unknown>;
+};
+export type SurveyResponseRow = {
+  id: string;
+  status: string;
+  answers: Record<string, unknown>;
+  flags: string[];
+  duration_seconds: number | null;
+  completed_at: string | null;
+};
+
+export const surveysApi = {
+  list: (projectId: string) => apiGet<Survey[]>(`/api/projects/${projectId}/surveys`),
+  create: (projectId: string, title: string, structure: SurveyStructure) =>
+    apiPost<Survey>(`/api/projects/${projectId}/surveys`, { title, structure }),
+  get: (surveyId: string) => apiGet<Survey>(`/api/surveys/${surveyId}`),
+  patch: (surveyId: string, body: { title?: string; structure?: SurveyStructure }) =>
+    apiPatch<Survey>(`/api/surveys/${surveyId}`, body),
+  setQuotas: (surveyId: string, quotas: QuotaCell[]) =>
+    request<QuotaCell[]>(`/api/surveys/${surveyId}/quotas`, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(quotas),
+    }),
+  setPrereg: (surveyId: string, hypotheses: string, planned_analyses: string[]) =>
+    request<Survey>(`/api/surveys/${surveyId}/prereg`, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ hypotheses, planned_analyses }),
+    }),
+  publish: (surveyId: string) =>
+    apiPost<{ token: string; public_url: string }>(`/api/surveys/${surveyId}/publish`),
+  pause: (surveyId: string) => apiPost<{ status: string }>(`/api/surveys/${surveyId}/pause`),
+  close: (surveyId: string) => apiPost<{ status: string }>(`/api/surveys/${surveyId}/close`),
+  monitor: (surveyId: string) => apiGet<SurveyMonitor>(`/api/surveys/${surveyId}/monitor`),
+  director: (surveyId: string) =>
+    apiGet<{ findings: DirectorFinding[] }>(`/api/surveys/${surveyId}/director`),
+  responses: (surveyId: string, status?: string) =>
+    apiGet<SurveyResponseRow[]>(
+      `/api/surveys/${surveyId}/responses${status ? `?status=${status}` : ""}`,
+    ),
+  exportDataset: (surveyId: string) =>
+    apiPost<{ dataset_id: string; n_rows: number; n_cols: number }>(
+      `/api/surveys/${surveyId}/export-dataset`,
+    ),
+  twinDryRun: (surveyId: string, n: number, margins: Record<string, Record<string, number>>) =>
+    apiPost<TwinDryRunReport>(`/api/surveys/${surveyId}/twin-dry-run`, { n, margins }),
+};
+
+// ---------------- Panel CRM ----------------
+export type Respondent = {
+  id: string;
+  email: string;
+  full_name: string;
+  attributes: Record<string, string>;
+  consented_at: string | null;
+  do_not_contact: boolean;
+  source: string;
+  created_at: string;
+};
+export type InvitationStats = {
+  sent: number;
+  started: number;
+  completed: number;
+  total: number;
+};
+
+export const panelApi = {
+  list: (q?: string) =>
+    apiGet<Respondent[]>(`/api/panel/respondents${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  create: (email: string, full_name: string, attributes: Record<string, string>) =>
+    apiPost<Respondent>(`/api/panel/respondents`, { email, full_name, attributes }),
+  importCsv: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiUpload<{ imported: number; skipped: number }>(`/api/panel/respondents/import`, form);
+  },
+  consent: (respondentId: string, consentText: string) =>
+    apiPost<Respondent>(`/api/panel/respondents/${respondentId}/consent`, {
+      scope: "surveys",
+      consent_text: consentText,
+      channel: "app",
+    }),
+  exportOne: (respondentId: string) =>
+    apiGet<Record<string, unknown>>(`/api/panel/respondents/${respondentId}/export`),
+  remove: (respondentId: string) => apiDelete(`/api/panel/respondents/${respondentId}`),
+  invite: (surveyId: string, respondentIds: string[], subject?: string, message?: string) =>
+    apiPost<{ sent: number; skipped: number; failed: number }>(
+      `/api/surveys/${surveyId}/invitations`,
+      { respondent_ids: respondentIds, ...(subject ? { subject } : {}), ...(message ? { message } : {}) },
+    ),
+  invitationStats: (surveyId: string) =>
+    apiGet<InvitationStats>(`/api/surveys/${surveyId}/invitations`),
+};
+
+export type TwinDryRunReport = {
+  n: number;
+  completed: number;
+  completion_rate: number;
+  personas_run: number;
+  predicted_dropoff: { qid: string; dropped: number }[];
+  confusing_items: { qid: string; count: number; notes: string[] }[];
+  distributions: Record<string, { value: unknown; count: number }[]>;
+  caveat: string;
+};
+
+// ---------------- Qual Studio (media + transcripts) ----------------
+export type MediaAsset = {
+  id: string;
+  project_id: string;
+  filename: string;
+  kind: "audio" | "video" | "other";
+  status: "uploaded" | "processing" | "transcribed" | "failed";
+  duration_seconds: number | null;
+  language: string;
+  error: string;
+  source: string;
+  created_at: string;
+};
+export type TranscriptSegment = { start: number; end: number; text: string };
+export type Transcript = {
+  _id: string;
+  language: string;
+  text: string;
+  segments: TranscriptSegment[];
+} | null;
+
+export const mediaApi = {
+  list: (projectId: string) => apiGet<MediaAsset[]>(`/api/projects/${projectId}/media`),
+  upload: (projectId: string, file: File, source = "upload") => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiUpload<MediaAsset>(`/api/projects/${projectId}/media?source=${source}`, form);
+  },
+  get: (assetId: string) =>
+    apiGet<{ asset: MediaAsset; transcript: Transcript }>(`/api/media/${assetId}`),
+  fileUrl: async (assetId: string): Promise<string> => {
+    const res = await fetch(`${API_URL}/api/media/${assetId}/file`, { headers: authHeaders() });
+    if (!res.ok) throw new ApiError(res.status, "media fetch failed");
+    return URL.createObjectURL(await res.blob());
+  },
+  correctSegment: (assetId: string, index: number, text: string) =>
+    apiPatch<{ status: string }>(`/api/media/${assetId}/transcript`, { index, text }),
+  retry: (assetId: string) => apiPost<MediaAsset>(`/api/media/${assetId}/retry`),
+};
+
+// ---------------- Qual Studio II (coding) ----------------
+export type Codebook = {
+  id: string;
+  project_id: string;
+  name: string;
+  codes: { name: string; definition: string }[];
+  status: "proposed" | "approved";
+  source_asset_ids: string[];
+  approved_at: string | null;
+};
+export type CodeAssignment = {
+  segment: number;
+  code: string;
+  confidence: number | null;
+  support: string;
+  source: "ai" | "human";
+};
+export type QuoteRow = { text: string; reason: string; start: number; end: number };
+export type ThemeMatrix = {
+  codes: string[];
+  sources: string[];
+  cells: Record<string, Record<string, number>>;
+  saturation: { code: string; sources: number; of: number; mentions: number }[];
+  asset_names: Record<string, string>;
+};
+
+export const qualApi = {
+  proposeCodebook: (projectId: string, assetIds: string[], name = "Codebook") =>
+    apiPost<Codebook>(`/api/projects/${projectId}/qual/codebooks`, { asset_ids: assetIds, name }),
+  codebooks: (projectId: string) => apiGet<Codebook[]>(`/api/projects/${projectId}/qual/codebooks`),
+  approveCodebook: (codebookId: string) =>
+    apiPost<Codebook>(`/api/qual/codebooks/${codebookId}/approve`),
+  codeAsset: (assetId: string, codebookId: string) =>
+    apiPost<{ assignments: CodeAssignment[] }>(`/api/media/${assetId}/code`, {
+      codebook_id: codebookId,
+    }),
+  coding: (assetId: string) =>
+    apiGet<{ coding: { assignments: CodeAssignment[]; sentiment: { segment: number; sentiment: string }[] } | null }>(
+      `/api/media/${assetId}/coding`,
+    ),
+  overrideCoding: (assetId: string, segment: number, code: string, action: "add" | "remove") =>
+    apiPatch<{ status: string }>(`/api/media/${assetId}/coding`, { segment, code, action }),
+  sentiment: (assetId: string) =>
+    apiPost<{ sentiment: { segment: number; sentiment: string }[] }>(`/api/media/${assetId}/sentiment`),
+  quotes: (assetId: string) =>
+    apiPost<{ quotes: QuoteRow[]; dropped_non_verbatim: number; run_id: string }>(
+      `/api/media/${assetId}/quotes`,
+    ),
+  synthesis: (projectId: string) => apiGet<ThemeMatrix>(`/api/projects/${projectId}/qual/synthesis`),
+};
+
+// ---------------- Persona Lab ----------------
+export type PersonaCohort = {
+  id: string;
+  project_id: string;
+  name: string;
+  n: number;
+  waves: number;
+  margins: Record<string, Record<string, number>>;
+  created_at: string;
+};
+export type PersonaRow = {
+  id: string;
+  handle: string;
+  attributes: Record<string, string>;
+  traits: Record<string, number>;
+  bio: string;
+  memory_waves: number;
+};
+
+export const personasApi = {
+  cohorts: (projectId: string) =>
+    apiGet<PersonaCohort[]>(`/api/projects/${projectId}/persona-cohorts`),
+  createCohort: (projectId: string, name: string, n: number, margins: Record<string, Record<string, number>>) =>
+    apiPost<PersonaCohort>(`/api/projects/${projectId}/persona-cohorts`, { name, n, margins }),
+  personas: (cohortId: string) => apiGet<PersonaRow[]>(`/api/persona-cohorts/${cohortId}`),
+  runWave: (cohortId: string, surveyId: string) =>
+    apiPost<TwinDryRunReport & { wave: number }>(`/api/persona-cohorts/${cohortId}/run`, {
+      survey_id: surveyId,
+    }),
+};
+
+// ---------------- Deliverables Studio ----------------
+export type ReportBlock = {
+  type: "heading" | "text" | "methodology" | "stat" | "table" | "chart" | "quote";
+  text?: string;
+  evidence_id?: string;
+  caption?: string;
+};
+export type Report = {
+  id: string;
+  project_id: string;
+  title: string;
+  blocks: ReportBlock[];
+  share_token: string | null;
+  created_at: string;
+};
+export type ReportEvidence = {
+  id: string;
+  label: string;
+  kind: string;
+  value: unknown;
+  run_id: string | null;
+};
+
+export const deliverablesApi = {
+  list: (projectId: string) => apiGet<Report[]>(`/api/projects/${projectId}/reports`),
+  create: (projectId: string) => apiPost<Report>(`/api/projects/${projectId}/reports`),
+  get: (reportId: string) => apiGet<Report>(`/api/reports/${reportId}`),
+  save: (reportId: string, body: { title?: string; blocks?: ReportBlock[] }) =>
+    apiPatch<Report>(`/api/reports/${reportId}`, body),
+  evidence: (projectId: string) => apiGet<ReportEvidence[]>(`/api/projects/${projectId}/evidence`),
+  renderUrl: (reportId: string) => `${API_URL}/api/reports/${reportId}/render`,
+  share: (reportId: string) => apiPost<{ token: string; path: string }>(`/api/reports/${reportId}/share`),
+  unshare: (reportId: string) => apiPost<{ status: string }>(`/api/reports/${reportId}/unshare`),
+};
+
+// ---------------- public survey runtime (NO auth) ----------------
+async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    cache: "no-store",
+    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = (await res.json())?.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return (await res.json()) as T;
+}
+
+export type PublicSurvey = { title: string; structure: SurveyStructure; survey_status: SurveyStatus };
+export type CompleteResult = { status: "accepted" | "screened_out" | "quota_full" };
+
+export const publicSurveyApi = {
+  get: (token: string) => publicRequest<PublicSurvey>(`/public/surveys/${token}`),
+  start: (token: string, resumeKey?: string, invitationToken?: string) =>
+    publicRequest<{ resume_key: string }>(`/public/surveys/${token}/responses`, {
+      method: "POST",
+      body: JSON.stringify({
+        resume_key: resumeKey ?? null,
+        invitation_token: invitationToken ?? null,
+      }),
+    }),
+  save: (token: string, resumeKey: string, answers: Record<string, unknown>) =>
+    publicRequest<{ status: string }>(`/public/surveys/${token}/responses/${resumeKey}`, {
+      method: "PATCH",
+      body: JSON.stringify({ answers }),
+    }),
+  complete: (token: string, resumeKey: string) =>
+    publicRequest<CompleteResult>(`/public/surveys/${token}/responses/${resumeKey}/complete`, {
+      method: "POST",
+    }),
 };

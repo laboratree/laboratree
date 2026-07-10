@@ -6,6 +6,7 @@ gpt-5.x deployments and serverless models (e.g. DeepSeek). Swapping providers is
 
 from __future__ import annotations
 
+import logging
 import time
 from functools import lru_cache
 from typing import Any
@@ -14,6 +15,8 @@ from openai import BadRequestError, OpenAI
 
 from ..config import settings
 from .observability import record_llm_call
+
+log = logging.getLogger(__name__)
 
 
 def resolve_azure_api_version(base_url: str, configured: str) -> str:
@@ -116,8 +119,9 @@ class LLMClient:
             record_llm_call(provider=self.provider, model=model or "", role=role, prompt_tokens=pt,
                             completion_tokens=ct, total_tokens=tt, latency_ms=latency_ms,
                             status=status, error=error)
-        except Exception:
-            pass
+        except Exception as exc:
+            # fail-open: LLM tracing must never break a completion/embedding call.
+            log.debug("LLM call tracing failed (non-fatal): %s", exc)
 
     def configured(self) -> bool:
         """Whether an API key is present (agents can run)."""

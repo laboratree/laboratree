@@ -240,8 +240,10 @@ def extract_variables(
         "name (a concrete measurable variable), "
         "role (one of 'independent'|'dependent'|'control'|'confounder'|'mediator'|'moderator'|'instrument'), "
         "measure (how to operationalize it — a concrete proxy, unit, or scale), "
-        "expected_direction (one of 'positive'|'negative'|'none'|'unclear' — its expected relationship to the outcome), "
-        "source_refs (array of the [n] source numbers that motivate it; [] if it is a standard control from your own knowledge), "
+        "expected_direction (one of 'positive'|'negative'|'none'|'unclear' — its expected "
+        "relationship to the outcome), "
+        "source_refs (array of the [n] source numbers that motivate it; [] if it is a standard "
+        "control from your own knowledge), "
         "rationale (one short clause on why it matters). "
         "Aim for 8-14 variables spanning all the roles. Be thorough and specific to THIS topic."
     )

@@ -7,13 +7,11 @@ import uuid
 
 import docx
 from fastapi.testclient import TestClient
-
 from laboratree.labs.paper.card import generate_card, normalize_card
 from laboratree.labs.paper.ingest import chunk_text
 from laboratree.labs.paper.rag import answer as rag_answer
 from laboratree.labs.paper.simplify import simplify
 from laboratree.main import app
-
 
 # ---------------- unit ----------------
 
@@ -71,7 +69,8 @@ def _docx_paper() -> bytes:
 
 def _fake_complete(system: str, prompt: str, **kw) -> str:
     if "JSON" in system:
-        return '{"problem_statement": "Predict churn.", "models_used": ["Logistic regression"], "target_variable": "churn"}'
+        return ('{"problem_statement": "Predict churn.", "models_used": ["Logistic regression"], '
+                '"target_variable": "churn"}')
     if "make hard ideas easy" in system:
         return "Think of it like guessing who will leave a gym."
     return "The paper uses logistic regression [0]."

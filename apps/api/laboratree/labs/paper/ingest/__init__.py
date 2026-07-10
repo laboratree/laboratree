@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....papers.models import Paper, PaperChunk, PaperStatus
 from ...signal.extract import extract_file
+
+log = logging.getLogger(__name__)
 
 
 def extract_paper_text(filename: str, data: bytes) -> str:
@@ -50,7 +53,9 @@ async def ingest_paper(
     if embed_fn is not None and pieces:
         try:
             embeddings = list(embed_fn(pieces))
-        except Exception:
+        except Exception as exc:
+            log.warning("embedding %d chunk(s) of paper %s failed; RAG search will be degraded: %s",
+                        len(pieces), paper.id, exc)
             embeddings = [None] * len(pieces)
 
     for i, (piece, emb) in enumerate(zip(pieces, embeddings, strict=False)):

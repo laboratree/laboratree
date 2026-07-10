@@ -1,6 +1,36 @@
 """Import-all module so Base.metadata sees every table (used by Alembic and app startup)."""
 
+from .coding.models import (  # noqa: F401
+    Codebook,
+    CodebookStatus,
+)
 from .core.db.orm import Base  # noqa: F401
+from .deliverables.models import Report  # noqa: F401
+from .fieldwork.models import (  # noqa: F401
+    Quota,
+    ResponseStatus,
+    Survey,
+    SurveyResponse,
+    SurveyStatus,
+)
+from .media.models import (  # noqa: F401
+    MediaAsset,
+    MediaStatus,
+)
+from .panel.models import (  # noqa: F401
+    ConsentRecord,
+    Invitation,
+    InvitationStatus,
+    Respondent,
+)
+from .papers.models import (  # noqa: F401
+    Experiment,
+    ExperimentStatus,
+    Paper,
+    PaperChunk,
+    PaperStatus,
+)
+from .personas.models import Persona, PersonaCohort  # noqa: F401
 from .projects.models import (  # noqa: F401
     Artifact,
     Dataset,
@@ -13,13 +43,6 @@ from .projects.models import (  # noqa: F401
     Project,
     Run,
     RunStatus,
-)
-from .papers.models import (  # noqa: F401
-    Experiment,
-    ExperimentStatus,
-    Paper,
-    PaperChunk,
-    PaperStatus,
 )
 from .tenancy.models import Membership, Organization, Role, User  # noqa: F401
 
@@ -45,4 +68,20 @@ __all__ = [
     "IdeationSession",
     "IdeationStatus",
     "LLMCall",
+    "Survey",
+    "SurveyStatus",
+    "SurveyResponse",
+    "ResponseStatus",
+    "Quota",
+    "Respondent",
+    "ConsentRecord",
+    "Invitation",
+    "InvitationStatus",
+    "MediaAsset",
+    "MediaStatus",
+    "Codebook",
+    "CodebookStatus",
+    "Report",
+    "PersonaCohort",
+    "Persona",
 ]

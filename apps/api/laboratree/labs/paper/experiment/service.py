@@ -8,6 +8,7 @@ must be uploaded by hand. Everything hangs off an anchor Run so gates/evidence a
 from __future__ import annotations
 
 import io
+import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from ....projects.models import Dataset, GateTask, Run, RunStatus
 from .fetch import DataFetchAgent, FetchResult, extract_dataset_refs
 from .walkthrough import build_walkthrough
 from .walkthrough.graph import mirror_to_neo4j
+
+log = logging.getLogger(__name__)
 
 CompleteFn = Callable[[str, str], str]
 
@@ -61,7 +64,9 @@ async def store_fetched_dataset(
     try:
         df = pd.read_csv(io.BytesIO(fr.data))
         n_rows, n_cols, chash = int(len(df)), int(df.shape[1]), dataframe_hash(df)
-    except Exception:
+    except Exception as exc:
+        log.warning("fetched dataset %r not parseable as CSV; storing without shape/hash: %s",
+                    fr.ref.name, exc)
         n_rows = n_cols = None
         chash = ""
     ds = Dataset(

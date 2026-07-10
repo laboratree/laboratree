@@ -8,7 +8,6 @@ import uuid
 import docx
 import pandas as pd
 from fastapi.testclient import TestClient
-
 from laboratree.core.registry import REGISTRY
 from laboratree.labs.paper.experiment.fetch import (
     DataFetchAgent,
@@ -172,7 +171,6 @@ def test_experiment_fetch_hitl_and_node_run(monkeypatch):
 
 def test_readiness_reason_catches_bad_data():
     import pandas as pd
-
     from laboratree.labs.modeling.evaluation.readiness import readiness_reason
 
     good = pd.DataFrame({"x1": [i * 0.5 for i in range(20)], "y": [i % 2 for i in range(20)]})

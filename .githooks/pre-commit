@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Laboratree pre-commit gate — fast checks on STAGED files only.
+#   Python -> ruff lint;  web -> tsc type-check.  (Heavier pytest runs on pre-push.)
+# Only files you are committing are checked, so pre-existing debt elsewhere never blocks you.
+# Bypass once, intentionally and sparingly:  git commit --no-verify
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM)
+[ ${#staged[@]} -eq 0 ] && exit 0
+
+status=0
+
+# --- Python: ruff lint on the staged .py files ---
+py_files=()
+for f in "${staged[@]}"; do [[ "$f" == *.py ]] && py_files+=("$f"); done
+if [ ${#py_files[@]} -gt 0 ]; then
+  echo "[pre-commit] ruff check (${#py_files[@]} staged .py file(s))…"
+  uv run --project apps/api ruff check "${py_files[@]}" || status=1
+fi
+
+# --- Web: tsc --noEmit when any TS file is staged (type-checking is project-wide by nature) ---
+web_ts=false
+for f in "${staged[@]}"; do [[ "$f" == apps/web/*.ts || "$f" == apps/web/*.tsx ]] && web_ts=true; done
+if [ "$web_ts" = true ]; then
+  if [ -x apps/web/node_modules/.bin/tsc ]; then
+    echo "[pre-commit] tsc --noEmit (web)…"
+    ( cd apps/web && node_modules/.bin/tsc --noEmit ) || status=1
+  else
+    echo "[pre-commit] tsc skipped — run 'npm install' in apps/web to enable the type gate."
+  fi
+fi
+
+if [ "$status" -ne 0 ]; then
+  echo
+  echo "✗ pre-commit checks failed — fix the issues above before committing."
+  echo "  (To bypass this once, intentionally:  git commit --no-verify)"
+  exit 1
+fi
+echo "✓ pre-commit checks passed."

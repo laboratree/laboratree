@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import io
+import logging
 
 from .base import OCRUnavailable
+
+log = logging.getLogger(__name__)
 
 
 class TesseractEngine:
@@ -16,7 +19,8 @@ class TesseractEngine:
 
             pytesseract.get_tesseract_version()
             return True
-        except Exception:
+        except Exception as exc:
+            log.debug("tesseract OCR engine unavailable: %s", exc)
             return False
 
     def image_to_text(self, image_bytes: bytes) -> str:

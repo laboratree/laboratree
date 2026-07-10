@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from collections.abc import Callable
@@ -10,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....papers.models import PaperChunk
+
+log = logging.getLogger(__name__)
 
 CompleteFn = Callable[[str, str], str]
 EmbedFn = Callable[[list[str]], list[list[float]]]
@@ -49,8 +52,8 @@ async def retrieve(
             ).scalars().all()
             if rows:
                 return [{"ordinal": c.ordinal, "text": c.text} for c in rows]
-        except Exception:
-            pass  # fall through to keyword
+        except Exception as exc:
+            log.info("vector retrieval failed; falling back to keyword search: %s", exc)
 
     # Keyword fallback (deterministic, no model needed).
     chunks = (await session.execute(base.order_by(PaperChunk.ordinal))).scalars().all()

@@ -31,7 +31,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: str, **claims: Any) -> str:
-    now = dt.datetime.now(tz=dt.timezone.utc)
+    now = dt.datetime.now(tz=dt.UTC)
     payload: dict[str, Any] = {
         "sub": subject,
         "iat": now,

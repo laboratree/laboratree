@@ -10,6 +10,7 @@ and (later) the agent graph's Engineer node.
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import tempfile
 import uuid
@@ -17,10 +18,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from laboratree_sdk import RunContext
 from laboratree_sdk.registry import UnknownComponentError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.evidence import BufferedEvidenceSink, persist_evidence
 from ..core.llm import get_llm
@@ -28,6 +28,8 @@ from ..core.registry import REGISTRY
 from ..core.repro import DEFAULT_SEED, build_manifest, dataframe_hash
 from ..core.storage import get_blob_store
 from ..projects.models import Artifact, Run, RunStatus
+
+log = logging.getLogger(__name__)
 
 
 class RunFailed(RuntimeError):
@@ -49,8 +51,8 @@ def _seed_everything(seed: int) -> None:
         import numpy as np
 
         np.random.seed(seed)
-    except Exception:
-        pass
+    except ImportError as exc:
+        log.debug("numpy unavailable; skipping numpy seed for reproducibility: %s", exc)
 
 
 async def execute_component(
@@ -84,6 +86,8 @@ async def execute_component(
     )
     session.add(run)
     await session.flush()  # assign run.id
+    log.info("run %s: executing component %s (lab=%s, project=%s)",
+             run.id, component_id, lab or "-", project_id)
 
     sink = BufferedEvidenceSink(run_id=run.id, org_id=org_id)
     data_version = dataframe_hash(inputs.get("dataset")) if "dataset" in inputs else ""
@@ -105,6 +109,7 @@ async def execute_component(
         except Exception as exc:
             run.status = RunStatus.FAILED
             run.error = f"{type(exc).__name__}: {exc}"
+            log.error("run %s: component %s failed: %s", run.id, component_id, run.error, exc_info=True)
             await session.commit()
             raise RunFailed(run.id, run.error) from exc
 
@@ -117,6 +122,7 @@ async def execute_component(
     )
     await session.commit()
     await session.refresh(run)
+    log.info("run %s: component %s succeeded (%d evidence record(s))", run.id, component_id, count)
     return RunResult(run=run, outputs=outputs, evidence_count=count)
 
 
@@ -127,7 +133,8 @@ async def _store_dataset_artifact(
     df = outputs.get("dataset") if isinstance(outputs, dict) else None
     try:
         import pandas as pd
-    except Exception:
+    except ImportError as exc:
+        log.debug("pandas unavailable; skipping dataset artifact persistence: %s", exc)
         return
     if not isinstance(df, pd.DataFrame):
         return

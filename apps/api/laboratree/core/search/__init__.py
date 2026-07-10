@@ -277,7 +277,8 @@ def _openalex_oa_pdf(ident: str) -> str | None:
         w = resp.json() or {}
         loc = w.get("best_oa_location") or {}
         return loc.get("pdf_url") or (w.get("open_access") or {}).get("oa_url")
-    except Exception:
+    except Exception as exc:  # network / JSON — OA lookup is best-effort, never fatal
+        log.info("OpenAlex OA lookup failed for %r: %s", ident, exc)
         return None
 
 
@@ -294,7 +295,8 @@ def _unpaywall_oa_pdf(doi: str) -> str | None:
             return None
         loc = (resp.json() or {}).get("best_oa_location") or {}
         return loc.get("url_for_pdf") or loc.get("url")
-    except Exception:
+    except Exception as exc:  # network / JSON — OA lookup is best-effort, never fatal
+        log.info("Unpaywall OA lookup failed for DOI %r: %s", doi, exc)
         return None
 
 

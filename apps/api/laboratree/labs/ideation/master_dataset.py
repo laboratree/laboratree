@@ -30,7 +30,8 @@ def _parse_csv(raw: bytes):
             df = pd.read_csv(io.BytesIO(raw), nrows=MAX_ROWS, **kw)
             if df.shape[1] >= 2 and len(df) >= 2:
                 return df
-        except Exception:
+        except Exception as exc:
+            log.debug("CSV parse attempt failed (kwargs=%s): %s", kw, exc)
             continue
     return None
 
@@ -53,7 +54,7 @@ def build_master(candidates: list[dict], fetch_fn: FetchFn) -> dict:
     import pandas as pd
 
     tables: list[dict] = []
-    frames: list[tuple[dict, "pd.DataFrame"]] = []
+    frames: list[tuple[dict, pd.DataFrame]] = []
     # try direct-download candidates first, then the rest — a portal URL often still serves/redirects
     # to a CSV, and _parse_csv rejects anything that isn't tabular, so trying is safe.
     picked = sorted(candidates, key=lambda c: not c.get("direct_download"))[:MAX_DOWNLOADS]
@@ -77,7 +78,7 @@ def build_master(candidates: list[dict], fetch_fn: FetchFn) -> dict:
                 "note": "No candidate downloaded into a usable table — try other sources or upload the data."}
 
     # group by schema; concatenate the largest schema-compatible group into the master
-    groups: list[list[tuple[dict, "pd.DataFrame"]]] = []
+    groups: list[list[tuple[dict, pd.DataFrame]]] = []
     for rec, df in frames:
         cols = _norm_cols(df)
         for g in groups:

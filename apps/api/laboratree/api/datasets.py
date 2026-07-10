@@ -13,10 +13,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from ..core.deps import PrincipalDep, SessionDep
 from ..core.storage import get_blob_store
 from ..labs.modeling.explain import explainer_for
+from ..labs.modeling.lessons import CatalogEntry, Lesson, build_lesson, catalog_entries
 from ..labs.modeling.viz import (
     FeatureSelectionTrace,
     ModelTrace,
@@ -134,6 +136,66 @@ async def model_trace(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # keep the node usable even if a fit fails
         raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+@router.get("/models/catalog", response_model=list[CatalogEntry])
+async def model_catalog(principal: PrincipalDep) -> list[CatalogEntry]:
+    """Every model the Learning Lab can teach — key, display name, group, one-liner, and whether
+    a deep hand-written lesson exists (vs the guided generic intro)."""
+    return catalog_entries()
+
+
+@router.post("/datasets/{dataset_id}/model-lesson", response_model=Lesson)
+async def model_lesson(
+    dataset_id: uuid.UUID,
+    principal: PrincipalDep,
+    session: SessionDep,
+    target: str,
+    model: str = "trees",
+    body: TraceParamsIn | None = None,
+) -> Lesson:
+    """Fit the model on the REAL data and return a narrated, chaptered lesson to play — the
+    cinematic superset of ``model-trace``. ``model`` is free text (paper model name, component
+    id, or lesson key); ``body.params`` are tunable hyperparameters for a live re-fit."""
+    ds = await _require_dataset(session, principal, dataset_id)
+    try:
+        data = get_blob_store().get(ds.storage_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=410, detail="dataset bytes missing") from exc
+    try:
+        return await asyncio.to_thread(build_lesson, data, target, model, body.params if body else None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # keep the lesson view usable even if a fit fails
+        raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+class DatasetSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    n_rows: int | None
+    n_cols: int | None
+    synthetic: bool
+
+
+@router.get("/projects/{project_id}/datasets", response_model=list[DatasetSummary])
+async def list_project_datasets(
+    project_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+) -> list[DatasetSummary]:
+    """All datasets in a project (org-scoped) — backs the Learning Lab's dataset picker."""
+    rows = (
+        await session.execute(
+            select(Dataset)
+            .where(Dataset.project_id == project_id, Dataset.org_id == principal.org_id)
+            .order_by(Dataset.created_at.desc())
+        )
+    ).scalars().all()
+    return [
+        DatasetSummary(
+            id=d.id, name=d.name, n_rows=d.n_rows, n_cols=d.n_cols, synthetic=bool(d.synthetic)
+        )
+        for d in rows
+    ]
 
 
 @router.post("/datasets/{dataset_id}/feature-selection", response_model=FeatureSelectionTrace)

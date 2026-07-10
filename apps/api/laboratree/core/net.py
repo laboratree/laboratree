@@ -28,7 +28,8 @@ def is_public_http_url(url: str) -> bool:
     """True only for an http(s) URL whose host resolves entirely to public IP addresses."""
     try:
         parsed = urlparse(url)
-    except Exception:
+    except (ValueError, TypeError) as exc:
+        log.debug("rejecting unparseable URL %r: %s", url, exc)
         return False
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return False

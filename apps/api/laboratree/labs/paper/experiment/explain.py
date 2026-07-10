@@ -8,10 +8,13 @@ them all, the LLM explains the specific step in plain language WITH a tiny worke
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from ....core.jsonparse import loads_lenient
+
+log = logging.getLogger(__name__)
 
 CompleteFn = Callable[..., str]
 
@@ -34,7 +37,8 @@ def explain_step(title: str, detail: str, complete_fn: CompleteFn) -> dict[str, 
     prompt = f"Pipeline step: {title}\nDescription from the paper: {detail}"
     try:
         parsed = loads_lenient(complete_fn(system, prompt))
-    except Exception:
+    except Exception as exc:
+        log.warning("step explainer LLM/JSON call failed for %r; using fallback text: %s", title, exc)
         parsed = None
     if not isinstance(parsed, dict):
         return {"what_it_is": detail or title, "why": "", "how_it_works": [],

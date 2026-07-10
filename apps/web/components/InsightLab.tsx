@@ -5,6 +5,41 @@ import Papa from "papaparse";
 import { Api } from "@/lib/api";
 import FileDropzone from "@/components/FileDropzone";
 import VegaChart from "@/components/VegaChart";
+import TrendLab from "@/components/TrendLab";
+import DecisionLab from "@/components/DecisionLab";
+
+// Trend + Decision are tools inside Insight now (fewer top-level tabs, same capabilities).
+const INSIGHT_TOOLS = ["explore", "trend", "decision"] as const;
+type InsightTool = (typeof INSIGHT_TOOLS)[number];
+const TOOL_LABELS: Record<InsightTool, string> = {
+  explore: "EDA & Charts",
+  trend: "Trend",
+  decision: "Decision",
+};
+
+export default function InsightLab({ projectId }: { projectId: string }) {
+  const [tool, setTool] = useState<InsightTool>("explore");
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {INSIGHT_TOOLS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTool(t)}
+            className={`rounded-full px-3 py-1.5 text-sm ${
+              tool === t ? "bg-forest text-white" : "border border-line text-forest hover:bg-bg"
+            }`}
+          >
+            {TOOL_LABELS[t]}
+          </button>
+        ))}
+      </div>
+      {tool === "explore" && <ExploreTool projectId={projectId} />}
+      {tool === "trend" && <TrendLab projectId={projectId} />}
+      {tool === "decision" && <DecisionLab projectId={projectId} />}
+    </div>
+  );
+}
 
 type Row = Record<string, unknown>;
 type ChartType = "histogram" | "scatter" | "correlation_heatmap";
@@ -17,7 +52,7 @@ type Profile = {
   top_correlations: { a: string; b: string; corr: number }[];
 };
 
-export default function InsightLab({ projectId }: { projectId: string }) {
+function ExploreTool({ projectId }: { projectId: string }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");

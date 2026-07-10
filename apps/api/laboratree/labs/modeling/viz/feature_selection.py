@@ -8,9 +8,12 @@ ones (migration) and random mutations explore — the population converges on a 
 from __future__ import annotations
 
 import io
+import logging
 
 from .common import prep_xy
 from .schema import FeatureSelectionTrace
+
+log = logging.getLogger(__name__)
 
 POP, GENS, SEARCH_TOP = 8, 5, 12
 
@@ -43,7 +46,8 @@ def feature_selection_trace(data: bytes, target: str) -> FeatureSelectionTrace:
             else:
                 m = LinearRegression().fit(Xtr[cols], ytr)
                 acc = max(0.0, r2_score(yte, m.predict(Xte[cols])))
-        except Exception:
+        except Exception as exc:
+            log.debug("feature-subset scoring failed for %s; scoring 0.0: %s", cols, exc)
             return 0.0
         return float(acc - 0.02 * (sum(mask) / len(feats)))  # small compactness penalty
 

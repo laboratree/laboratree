@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
-
 from laboratree.core.search import SearchHit, looks_like_data_url
 from laboratree.labs.ideation.coscientist import run_ideation, tournament
 from laboratree.labs.ideation.data_hunt import hunt_datasets
@@ -123,7 +122,8 @@ def _fake_evidence_complete(system: str, prompt: str, **kw) -> str:
 
 def _fake_search(query: str, count: int):
     return [
-        SearchHit(title="Female literacy and growth", url="https://example.org/a", description="A study.", source="brave"),
+        SearchHit(title="Female literacy and growth", url="https://example.org/a",
+                  description="A study.", source="brave"),
         SearchHit(title="Rural development report", url="https://example.org/b", description="Stats.", source="brave"),
     ]
 
@@ -338,7 +338,8 @@ def test_plan_experiment_validates_and_falls_back():
     avail = ["model.ml.logistic_regression", "model.ml.random_forest", "model.ml.gradient_boosting"]
 
     def good(system, prompt, **kw):
-        return '{"preprocessing": "impute+scale", "models": ["model.ml.random_forest"], "rationale": "trees handle mixed types"}'
+        return ('{"preprocessing": "impute+scale", "models": ["model.ml.random_forest"], '
+                '"rationale": "trees handle mixed types"}')
 
     plan = plan_experiment({"n_rows": 100}, "h", "classification", avail, good)
     assert plan["models"] == ["model.ml.random_forest"]
@@ -364,9 +365,12 @@ def test_rank_and_summarize_pick_best_by_metric():
 
 def _auto_experiment_llm(system: str, prompt: str, **kw) -> str:
     if "ML strategist" in system:
-        return '{"preprocessing": "impute+scale", "models": ["model.ml.logistic_regression", "model.ml.random_forest"], "rationale": "baselines"}'
+        return ('{"preprocessing": "impute+scale", '
+                '"models": ["model.ml.logistic_regression", "model.ml.random_forest"], '
+                '"rationale": "baselines"}')
     if "research analyst" in system:
-        return '{"best_model": "model.ml.random_forest", "verdict": "RF fits best.", "insights": ["fit is not causation"]}'
+        return ('{"best_model": "model.ml.random_forest", "verdict": "RF fits best.", '
+                '"insights": ["fit is not causation"]}')
     return "{}"
 
 

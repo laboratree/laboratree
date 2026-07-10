@@ -17,20 +17,26 @@ const SignalLab = dyn(() => import("@/components/SignalLab"));
 const PapersLab = dyn(() => import("@/components/PapersLab"));
 const InsightLab = dyn(() => import("@/components/InsightLab"));
 const IdeationLab = dyn(() => import("@/components/IdeationLab"));
-const TrendLab = dyn(() => import("@/components/TrendLab"));
-const DecisionLab = dyn(() => import("@/components/DecisionLab"));
 const CollectionLab = dyn(() => import("@/components/CollectionLab"));
+const FieldLab = dyn(() => import("@/components/FieldLab"));
+const PanelLab = dyn(() => import("@/components/PanelLab"));
+const QualLab = dyn(() => import("@/components/QualLab"));
+const DeliverablesLab = dyn(() => import("@/components/DeliverablesLab"));
+const PersonaLab = dyn(() => import("@/components/PersonaLab"));
 const PipelineLab = dyn(() => import("@/components/PipelineLab"));
 const LlmActivity = dyn(() => import("@/components/LlmActivity"));
 
 const TABS = [
   { key: "ideation", label: "Ideation Lab" },
   { key: "collection", label: "Collection Lab" },
+  { key: "field", label: "Field Lab" },
+  { key: "panel", label: "Panel" },
+  { key: "personas", label: "Persona Lab" },
+  { key: "qual", label: "Qual Studio" },
   { key: "signal", label: "Signal Lab" },
   { key: "insight", label: "Insight Lab" },
-  { key: "trend", label: "Trend Lab" },
-  { key: "decision", label: "Decision Lab" },
   { key: "papers", label: "Paper Lab" },
+  { key: "deliver", label: "Deliverables" },
   { key: "pipeline", label: "Pipeline" },
   { key: "llm", label: "LLM Activity" },
 ] as const;
@@ -112,11 +118,14 @@ export default function ProjectWorkspace() {
       <div className="mt-6">
         {tab === "ideation" && <IdeationLab projectId={projectId} />}
         {tab === "collection" && <CollectionLab projectId={projectId} />}
+        {tab === "field" && <FieldLab projectId={projectId} />}
+        {tab === "panel" && <PanelLab projectId={projectId} />}
+        {tab === "personas" && <PersonaLab projectId={projectId} />}
+        {tab === "qual" && <QualLab projectId={projectId} />}
         {tab === "signal" && <SignalLab projectId={projectId} />}
         {tab === "insight" && <InsightLab projectId={projectId} />}
-        {tab === "trend" && <TrendLab projectId={projectId} />}
-        {tab === "decision" && <DecisionLab projectId={projectId} />}
         {tab === "papers" && <PapersLab projectId={projectId} />}
+        {tab === "deliver" && <DeliverablesLab projectId={projectId} />}
         {tab === "pipeline" && <PipelineLab projectId={projectId} />}
         {tab === "llm" && <LlmActivity projectId={projectId} />}
       </div>

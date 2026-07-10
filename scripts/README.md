@@ -15,6 +15,19 @@ bash scripts/start.sh      # Ctrl+C stops both dev servers
 bash scripts/stop.sh       # or stop them + the datastores later
 ```
 
+## Git hooks (code-quality gate)
+One-time per clone, enable the shared hooks in `.githooks/`:
+```bash
+scripts\setup-hooks.bat      # Windows
+bash scripts/setup-hooks.sh  # macOS / Linux / Git Bash
+```
+This sets `core.hooksPath = .githooks`, giving you:
+- **pre-commit** — `ruff` on staged `.py` + `tsc --noEmit` on the web app (only when relevant files are
+  staged, so pre-existing debt never blocks you).
+- **pre-push** — `pytest` (apps/api) before code leaves your machine.
+
+Bypass a hook once, intentionally: `git commit --no-verify` / `git push --no-verify`.
+
 ## Notes
 - **API port** is `8000` (matches `apps/web/.env.local` → `NEXT_PUBLIC_API_URL`). If
   `8000` is taken, edit `API_PORT` at the top of the script (and keep `.env.local` in

@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
-
 from laboratree.labs.intelligence.report import compute_trust_score, render_report_html
 from laboratree.main import app
 

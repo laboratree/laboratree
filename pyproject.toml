@@ -7,8 +7,10 @@ members = ["apps/api", "packages/plugin-sdk"]
 [tool.uv.sources]
 laboratree-plugin-sdk = { workspace = true }
 
+# 120 matches how the codebase is actually written (390 of 406 "long" lines were 101–120 cols);
+# the formatter owns wrapping, this is the lint ceiling.
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
