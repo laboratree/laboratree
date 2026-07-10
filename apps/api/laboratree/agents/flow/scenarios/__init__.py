@@ -6,6 +6,6 @@ one flow key via ``@phase``. Importing this package registers every scenario.
 
 from __future__ import annotations
 
-from . import ngo_education  # noqa: F401 — registers the ngo-policy executors
+from . import market_research, ngo_education, policy_research, research  # noqa: F401
 
-__all__ = ["ngo_education"]
+__all__ = ["ngo_education", "policy_research", "research", "market_research"]

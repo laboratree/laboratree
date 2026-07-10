@@ -32,13 +32,26 @@ def _setup(client: TestClient) -> tuple[dict[str, str], str]:
     return headers, project_id
 
 
-def test_flow_catalog_lists_ngo_flow_with_executors():
+def test_flow_catalog_lists_the_three_use_case_flows():
     with TestClient(app) as client:
-        flows = client.get("/api/flows").json()["flows"]
-        ngo = next(f for f in flows if f["key"] == "ngo-policy")
-        assert len(ngo["stages"]) == 19
-        # every stage has an executor (the whole lifecycle is orchestrable)
-        assert set(ngo["stages"]) <= set(ngo["executors"])
+        flows = {f["key"]: f for f in client.get("/api/flows").json()["flows"]}
+        # the three use-case flows + the legacy alias
+        assert {"research", "policy-research", "market-research", "ngo-policy"} <= set(flows)
+
+        # policy research: every stage has an executor (fully orchestrable)
+        policy = flows["policy-research"]
+        assert len(policy["stages"]) == 19
+        assert set(policy["stages"]) <= set(policy["executors"])
+
+        # market research: the market-intel phases are DeepAgent stages BY DESIGN
+        market = flows["market-research"]
+        deep_stages = set(market["stages"]) - set(market["executors"])
+        assert {"market-sizing", "competitor-scan", "trend-scan", "pricing-analysis"} == deep_stages
+        assert "segmentation" in market["executors"]
+
+        # research: literature is the DeepAgent stage
+        research = flows["research"]
+        assert set(research["stages"]) - set(research["executors"]) == {"literature"}
 
 
 def test_orchestrated_flow_runs_every_phase_and_gates_the_human_step():

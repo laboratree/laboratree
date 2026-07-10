@@ -21,14 +21,37 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["flows"])
 
 # canonical stage order per flow (the frontend may send its own, possibly edited, order)
+_POLICY_STAGES = [
+    "intake", "stakeholders", "background", "questions", "hypotheses",
+    "design", "personas", "questionnaire", "field",
+    "clean", "eda", "crosstab", "model",
+    "prioritize", "intervention", "pilot",
+    "impact", "recommend", "monitor",
+]
+
 DEFAULT_STAGES: dict[str, list[str]] = {
-    "ngo-policy": [
-        "intake", "stakeholders", "background", "questions", "hypotheses",
-        "design", "personas", "questionnaire", "field",
-        "clean", "eda", "crosstab", "model",
-        "prioritize", "intervention", "pilot",
-        "impact", "recommend", "monitor",
+    # the three use-case flows; stages without executors are DeepAgent phases
+    "research": [
+        "intake", "literature", "hypotheses", "design", "personas", "questionnaire",
+        "field", "clean", "eda", "crosstab", "model", "recommend", "monitor",
     ],
+    "policy-research": _POLICY_STAGES,
+    "market-research": [
+        "intake", "market-sizing", "competitor-scan", "trend-scan",
+        "design", "questionnaire", "field", "clean", "eda",
+        "segmentation", "pricing-analysis", "prioritize", "recommend", "monitor",
+    ],
+    "ngo-policy": _POLICY_STAGES,  # legacy alias of policy-research (old canvases keep working)
+}
+
+# default DeepAgent objectives per flow's uncovered stages (overridable per request)
+DEFAULT_OBJECTIVES: dict[str, dict[str, str]] = {
+    "research": {
+        "literature": "Survey the scholarly literature for this project's topic: find the most "
+                      "relevant papers (research_search/arxiv_search), synthesize what is known, "
+                      "and cite every claim to a specific source.",
+    },
+    "market-research": dict(scenarios.market_research.DEEP_STAGES),
 }
 
 MAX_STAGES = 40
@@ -100,9 +123,10 @@ async def supervise_flow(
         raise HTTPException(status_code=404, detail="project not found")
     if flow_key not in DEFAULT_STAGES:
         raise HTTPException(status_code=422, detail=f"unknown flow: {flow_key}")
+    objectives = {**DEFAULT_OBJECTIVES.get(flow_key, {}), **body.objectives}
     return await supervisor.supervise(
         session, org_id=principal.org_id, project_id=project_id, flow_key=flow_key,
-        stage_ids=body.stages or DEFAULT_STAGES[flow_key], objectives=body.objectives,
+        stage_ids=body.stages or DEFAULT_STAGES[flow_key], objectives=objectives,
     )
 
 

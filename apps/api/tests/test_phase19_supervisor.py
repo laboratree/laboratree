@@ -144,6 +144,37 @@ def test_deep_agent_fills_uncovered_stage_with_tools(monkeypatch):
         assert any("$4-6B" in str(e["value"]) for e in claims)
 
 
+def test_market_research_flow_mixes_deep_agent_and_components(monkeypatch):
+    from laboratree.core.config import settings
+    from laboratree.core.search import SearchHit
+    from laboratree.labs.agentic import llm as agentic_llm
+
+    monkeypatch.setattr(settings, "llm_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    scripted = iter([DEEP_STEP_1, DEEP_FINISH])
+    monkeypatch.setattr(agentic_llm, "default_complete",
+                        lambda s, p, **kw: next(scripted))
+    import laboratree.core.search as search_mod
+    monkeypatch.setattr(search_mod, "search_available", lambda: True)
+    monkeypatch.setattr(search_mod, "web_search", lambda q, count=None: [
+        SearchHit(title="Sizing report", url="https://example.org/m", description="$5B")])
+
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+        body = client.post(
+            f"/api/projects/{project_id}/flows/market-research/supervise",
+            json={"stages": ["market-sizing", "segmentation"]}, headers=headers).json()
+        assert body["status"] == "completed"
+        by_id = {s["id"]: s for s in body["stages"]}
+        # the market-intel gap was filled by the deep agent, with the flow's DEFAULT objective
+        assert by_id["market-sizing"]["lab"] == "deep-agent"
+        assert by_id["market-sizing"]["status"] == "succeeded"
+        # segmentation ran as a real Evidence-locked clustering component
+        assert by_id["segmentation"]["lab"] == "modeling"
+        assert by_id["segmentation"]["status"] == "succeeded"
+        assert by_id["segmentation"]["evidence"] >= 1
+
+
 def test_deep_agent_gates_honestly_without_llm(monkeypatch):
     from laboratree.core.config import settings
 

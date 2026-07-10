@@ -78,6 +78,14 @@ def get_executor(flow_key: str, stage_id: str) -> tuple[PhaseExecutor, str] | No
     return _EXECUTORS.get((flow_key, stage_id))
 
 
+def alias_flow(src_key: str, dst_key: str) -> int:
+    """Register every executor of one flow under another key (flows sharing machinery)."""
+    copied = {(dst_key, stage): entry
+              for (key, stage), entry in _EXECUTORS.items() if key == src_key}
+    _EXECUTORS.update(copied)
+    return len(copied)
+
+
 def registered_stages(flow_key: str) -> list[str]:
     return [stage for key, stage in _EXECUTORS if key == flow_key]
 
