@@ -130,4 +130,64 @@ export const POLICY_FIRM_FLOW: FlowTemplate = {
   ],
 };
 
-export const FLOW_TEMPLATES: FlowTemplate[] = [RESEARCH_FIRM_FLOW, POLICY_FIRM_FLOW];
+// The full 16-phase NGO policy-research lifecycle (Bright Future Foundation education example).
+// Every phase maps to a runnable component, a Lab tab, or a human stage — one activatable flow.
+export const NGO_POLICY_FLOW: FlowTemplate = {
+  key: "ngo-policy",
+  name: "NGO policy research (education)",
+  tagline: "Problem → evidence → design → personas → field → analysis → impact → recommend → monitor",
+  stages: [
+    { id: "intake", label: "1 · Problem intake", kind: "lab", labTab: "signal",
+      description: "Signal Lab: ingest the proposal, budget, meeting notes → mission, goal, budget, timeline." },
+    { id: "stakeholders", label: "2 · Stakeholder mapping", kind: "lab", labTab: "ideation",
+      description: "Map students, parents, teachers, schools, government, NGOs and their relationships." },
+    { id: "background", label: "3 · Background research", kind: "lab", labTab: "papers",
+      description: "Paper Lab: UDISE+/ASER/UNICEF reports → knowledge base of dropout drivers." },
+    { id: "questions", label: "4 · Research questions", kind: "lab", labTab: "ideation",
+      description: "Ideation: why are students absent? what causes dropout? highest-impact intervention?" },
+    { id: "hypotheses", label: "5 · Hypotheses", kind: "lab", labTab: "ideation",
+      description: "Co-Scientist: financial hardship / distance / teacher absenteeism drive dropout." },
+    { id: "design", label: "6 · Research design", kind: "lab", labTab: "collection",
+      description: "Collection: survey + interview + sampling + ethics + power/sample-size." },
+    { id: "personas", label: "7 · Persona simulation", kind: "lab", labTab: "personas",
+      description: "Persona Lab: synthetic students/families stress-test the survey before fielding." },
+    { id: "questionnaire", label: "8 · Questionnaire", kind: "lab", labTab: "field",
+      description: "Field Lab: build the KAP survey, skip logic, translation, validation." },
+    { id: "field", label: "9 · Field survey", kind: "lab", labTab: "field",
+      description: "Collect responses; interviews → Qual Studio; photos/GPS; fraud checks." },
+    { id: "clean", label: "10a · Clean data", kind: "component",
+      componentId: "transform.mean_impute", params: {},
+      description: "Impute missing values in the unified dataset." },
+    { id: "eda", label: "10b · Exploratory analysis", kind: "component",
+      componentId: "analyzer.eda_profile", params: {},
+      description: "Distributions, missingness, correlations — Evidence-locked." },
+    { id: "crosstab", label: "10c · Dropout crosstab", kind: "component",
+      componentId: "analyzer.crosstab", params: { banner: "gender", stub: "dropout" },
+      description: "Dropout by gender with significance letters (girls far from school hit hardest)." },
+    { id: "model", label: "10d · Dropout model", kind: "component",
+      componentId: "model.ml.logistic_regression", params: { target: "dropout" },
+      description: "Predict dropout from distance/income/attendance; red-team the model." },
+    { id: "prioritize", label: "11 · Prioritize problems", kind: "component",
+      componentId: "decision.expected_value",
+      params: { options: [
+        { label: "Free bicycles (transport)", value: 0.75, probability: 0.85 },
+        { label: "Scholarships (cost)", value: 0.65, probability: 0.70 },
+        { label: "Libraries", value: 0.40, probability: 0.90 },
+      ] },
+      description: "Cost-impact ranking: transport vs scholarships vs libraries." },
+    { id: "intervention", label: "12 · Intervention design", kind: "manual",
+      description: "Design the intervention portfolio (bicycles, scholarships, tutoring) with cost/reach/risk." },
+    { id: "pilot", label: "13 · Pilot", kind: "lab", labTab: "field",
+      description: "Field a pilot; monitor attendance, learning, cost, satisfaction." },
+    { id: "impact", label: "14 · Impact evaluation", kind: "lab", labTab: "field",
+      description: "Field Lab: run before/after pilot waves, then a DiD / cost-effectiveness estimate (needs panel data)." },
+    { id: "recommend", label: "15 · Recommendations", kind: "lab", labTab: "deliver",
+      description: "Deliverables: Evidence-bound recommendations + budget allocation + scaling plan." },
+    { id: "monitor", label: "16 · Monitor & improve", kind: "lab", labTab: "deliver",
+      description: "Live dashboard: KPI tracking, trends, quarterly + impact reports." },
+  ],
+};
+
+export const FLOW_TEMPLATES: FlowTemplate[] = [
+  NGO_POLICY_FLOW, RESEARCH_FIRM_FLOW, POLICY_FIRM_FLOW,
+];

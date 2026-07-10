@@ -1311,6 +1311,24 @@ export const qualApi = {
   synthesis: (projectId: string) => apiGet<ThemeMatrix>(`/api/projects/${projectId}/qual/synthesis`),
 };
 
+// ---------------- Demo seeder ----------------
+export type SeedResult = {
+  scenario: string;
+  dataset_id: string;
+  n_rows: number;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  runs: { component_id: string; run_id?: string; evidence?: number; error?: string }[];
+  evidence_total: number;
+  survey_id: string;
+  cohort_id: string;
+  personas: number;
+};
+export const demoApi = {
+  seed: (projectId: string, scenario = "ngo_education") =>
+    apiPost<SeedResult>(`/api/projects/${projectId}/demo/seed`, { scenario }),
+};
+
 // ---------------- Persona Lab ----------------
 export type PersonaCohort = {
   id: string;

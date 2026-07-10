@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Background, Controls, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Papa from "papaparse";
-import { Api, type ComponentSpecLite, type PipelineResult } from "@/lib/api";
+import { Api, demoApi, type ComponentSpecLite, type PipelineResult } from "@/lib/api";
 import {
   FLOW_TEMPLATES,
   type FlowNodeKind,
@@ -177,6 +177,28 @@ export default function PipelineLab({ projectId }: { projectId: string }) {
                 {t.name}
               </button>
             ))}
+            <button
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  const seed = await demoApi.seed(projectId);
+                  setRows(seed.rows);
+                  setFileName(`demo · ${seed.scenario}`);
+                  loadTemplate("ngo-policy");
+                  setError(null);
+                } catch (e) {
+                  setError(e instanceof Error ? `seed failed: ${e.message}` : "seed failed");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+              title="Seed a realistic NGO education scenario (dataset + evidence + survey + personas) and load the flow"
+              className="rounded-full bg-forest px-3 py-1.5 text-sm text-white hover:bg-forest/90 disabled:opacity-50"
+            >
+              🌱 Load demo scenario
+            </button>
             <button
               onClick={() => { setStages([]); setFlowName("Blank canvas"); setSelectedId(null); }}
               className="rounded-full border border-line px-3 py-1.5 text-sm text-ink/60 hover:bg-bg"
