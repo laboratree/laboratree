@@ -24,7 +24,10 @@ const PanelLab = dyn(() => import("@/components/PanelLab"));
 const QualLab = dyn(() => import("@/components/QualLab"));
 const DeliverablesLab = dyn(() => import("@/components/DeliverablesLab"));
 const PersonaLab = dyn(() => import("@/components/PersonaLab"));
-const PipelineLab = dyn(() => import("@/components/PipelineLab"));
+const PipelineLab = dynamic(() => import("@/components/pipeline/PipelineLab"), {
+  ssr: false,
+  loading: TabLoading,
+});
 const LlmActivity = dyn(() => import("@/components/LlmActivity"));
 const LearningLab = dyn(() => import("@/components/LearningLab"));
 
@@ -115,7 +118,7 @@ export default function ProjectWorkspace() {
         {tab === "papers" && <PapersLab projectId={projectId} />}
         {tab === "learning" && <LearningLab projectId={projectId} />}
         {tab === "deliver" && <DeliverablesLab projectId={projectId} />}
-        {tab === "pipeline" && <PipelineLab projectId={projectId} />}
+        {tab === "pipeline" && <PipelineLab projectId={projectId} onOpenLab={setTab} />}
         {tab === "llm" && <LlmActivity projectId={projectId} />}
       </div>
     </div>
