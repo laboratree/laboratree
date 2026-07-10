@@ -187,7 +187,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
                 run_id: r.run_id, evidence_count: r.evidence,
                 error: r.error ?? undefined, preview: r.artifacts }
             : undefined,
-          description: r.summary ? `${s.description} — 🤖 ${r.summary}` : s.description,
+          description: r.summary ? `${s.description} — ⚡ ${r.summary}` : s.description,
         };
       }));
       setSeedNote(
@@ -248,7 +248,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
               <button onClick={runOrchestrated} disabled={busy || stages.length === 0}
                 title="Every phase runs as a sub-agent: analyses execute, the survey publishes and fields, personas simulate, the report composes — human steps open gates."
                 className="rounded-full border border-[#A8D08D]/50 bg-white/10 px-5 py-2 text-sm font-bold text-white transition hover:bg-white/20 disabled:opacity-50">
-                {busy ? "Orchestrating…" : "🤖 Run whole flow"}
+                {busy ? "Orchestrating…" : "⚡ Orchestrate flow"}
               </button>
             )}
           </div>
