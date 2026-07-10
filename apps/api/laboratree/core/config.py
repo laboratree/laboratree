@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     blob_backend: str = "local"
     blob_local_root: str = ""
 
+    # --- Persona Lab (synthetic respondents; labs/synth engine) ---
+    persona_engine: str = "llm"               # "llm" (default) | future: "tinytroupe"
+
     # --- Transcription (Qual Studio; core/transcribe engine) ---
     transcribe_provider: str = "openai"       # "openai" (any OpenAI-compatible audio API) | "none"
     transcribe_model: str = "whisper-1"

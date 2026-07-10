@@ -19,12 +19,12 @@ from sqlalchemy import select
 from ..core.deps import Principal, PrincipalDep, SessionDep, require_role
 from ..core.llm.context import use_llm_context
 from ..fieldwork.models import Survey
-from ..labs.synth import llm as synth_llm
+from ..labs.synth.engine import get_persona_engine
 from ..labs.synth.graph_mirror import mirror_cohort_graph
 from ..labs.synth.personas import build_personas
 from ..labs.synth.social import build_social_graph, neighbour_opinion, social_context
 from ..labs.synth.traits import assign_traits, bio_sketch
-from ..labs.synth.twin import aggregate_dry_run, simulate_persona_wave
+from ..labs.synth.twin import aggregate_dry_run
 from ..personas.models import Persona, PersonaCohort
 from ..projects.models import Project
 from ..tenancy.models import Role
@@ -187,15 +187,16 @@ async def run_wave(
     }
     edges = cohort.graph or []
     persona_dicts = [
-        {"handle": p.handle, "bio": p.bio, "attributes": p.attributes, "memory": p.memory or [],
+        {"handle": p.handle, "bio": p.bio, "attributes": p.attributes, "traits": p.traits,
+         "memory": p.memory or [],
          "social_context": social_context(neighbour_opinion(p.handle, edges, last_answers))}
         for p in personas
     ]
+    engine = get_persona_engine()
 
     def _run() -> list[dict[str, Any]]:
         return [
-            simulate_persona_wave(structure, pd, synth_llm.default_complete,
-                                  social_context=pd["social_context"])
+            engine.simulate(structure, pd, social_context=pd["social_context"])
             for pd in persona_dicts
         ]
 
@@ -212,5 +213,7 @@ async def run_wave(
 
     report = aggregate_dry_run(structure, results)
     report["wave"] = wave
+    # how many answers behavioural theory decided (rather than the LLM guessing)
+    report["grounded_questions"] = sorted({q for r in results for q in (r.get("grounded") or [])})
     log.info("cohort %s wave %d run on survey %s", cohort.id, wave, survey.id)
     return report
