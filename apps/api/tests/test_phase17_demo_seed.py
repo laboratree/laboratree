@@ -110,3 +110,55 @@ def test_seed_creates_dataset_evidence_survey_and_cohort():
         bad = client.post(f"/api/projects/{project_id}/demo/seed",
                           json={"scenario": "nope"}, headers=headers)
         assert bad.status_code == 422
+
+
+def test_seed_activates_every_stage():
+    """Every NGO flow stage gets a real artifact: published survey + completes, persona wave
+    (deterministic fallback, no LLM key), hypothesis tests, sample size, DiD, shared report."""
+    with TestClient(app) as client:
+        email = f"act-{uuid.uuid4().hex[:10]}@example.com"
+        r = client.post("/api/auth/register",
+                        json={"email": email, "password": "supersecret1", "full_name": "A"})
+        headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        project_id = client.post("/api/projects", json={"name": "Act"},
+                                 headers=headers).json()["id"]
+        body = client.post(f"/api/projects/{project_id}/demo/seed",
+                           json={"scenario": "ngo_education", "n_rows": 120, "n_personas": 6},
+                           headers=headers).json()
+        stages = body["stages"]
+
+        # phases 1-6: intake, stakeholders, background/questions/hypotheses, design — real runs
+        for key in ("intake", "stakeholders", "background", "questions", "hypotheses", "design"):
+            assert stages[key].get("run_id"), f"stage {key} has no run"
+        assert stages["intake"]["brief"]["primary_goal"] == "Reduce dropout"
+
+        # phase 7: the persona wave actually ran (keyless -> deterministic fallback)
+        assert stages["personas"]["wave"] == 1
+        cohort = client.get(f"/api/persona-cohorts/{body['cohort_id']}", headers=headers).json()
+        assert all(p["memory_waves"] == 1 for p in cohort)
+
+        # phases 8-9: survey is LIVE with a public link and synthetic completes
+        assert stages["questionnaire"]["status"] == "live"
+        assert stages["field"]["completes"] == 60 and stages["field"]["synthetic"] is True
+        survey = client.get(f"/api/surveys/{body['survey_id']}", headers=headers).json()
+        assert survey["status"] == "live" and survey["public_token"]
+        assert survey["prereg"]["frozen_at"]                     # U6 lock with H1-H3
+        responses = client.get(f"/api/surveys/{body['survey_id']}/responses",
+                               headers=headers).json()
+        completed = [x for x in responses if x["status"] == "complete"]
+        assert len(completed) >= 60
+        assert any("speeder" in (x.get("flags") or []) for x in responses)
+
+        # phases 13-14: pilot dataset + DiD run
+        assert stages["pilot"]["dataset_id"] and stages["impact"]["run_id"]
+
+        # phases 15-16: Evidence-bound report with a PUBLIC share page that renders
+        assert stages["recommend"]["report_id"]
+        report = client.get(f"/api/reports/{stages['recommend']['report_id']}",
+                            headers=headers).json()
+        stat_blocks = [b for b in report["blocks"] if b["type"] == "stat"]
+        assert stat_blocks and all(b.get("evidence_id") for b in stat_blocks)
+        share_token = stages["monitor"]["share_path"].rsplit("/", 1)[-1]
+        public = client.get(f"/public/reports/{share_token}")
+        assert public.status_code == 200
+        assert "Recommendations" in public.text

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from ...core.config import settings
 from . import llm as synth_llm
+from .fallback import deterministic_wave_answers
 from .grounding import ground_answers
 from .personas import build_personas
 from .traits import assign_traits, bio_sketch
@@ -47,9 +48,14 @@ class LLMPersonaEngine:
     def simulate(
         self, structure: dict[str, Any], persona: dict[str, Any], *, social_context: str = ""
     ) -> dict[str, Any]:
-        result = simulate_persona_wave(
-            structure, persona, synth_llm.default_complete, social_context=social_context
-        )
+        try:
+            result = simulate_persona_wave(
+                structure, persona, synth_llm.default_complete, social_context=social_context
+            )
+        except synth_llm.LLMNotConfigured as exc:
+            # key absence only — real API errors still propagate
+            log.warning("persona wave without LLM (%s) — deterministic fallback", exc)
+            result = deterministic_wave_answers(structure, persona)
         grounded = ground_answers(structure, persona, result.get("answers") or {})
         result["answers"] = grounded.answers
         result["grounded"] = grounded.grounded

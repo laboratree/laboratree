@@ -163,20 +163,12 @@ async def cohort_graph(
     }
 
 
-@router.post("/persona-cohorts/{cohort_id}/run")
-async def run_wave(
-    cohort_id: uuid.UUID,
-    body: RunWaveIn,
-    session: SessionDep,
-    principal: Annotated[Principal, Depends(require_role(Role.ANALYST))],
+async def execute_wave(
+    session: SessionDep, cohort: PersonaCohort, survey: Survey, *, org_id: uuid.UUID
 ) -> dict[str, Any]:
-    """Survey the cohort: each persona answers in-character + consistent with prior waves."""
-    cohort = await _require_cohort(session, principal, cohort_id)
-    survey = await session.get(Survey, body.survey_id)
-    if survey is None or survey.org_id != principal.org_id:
-        raise HTTPException(status_code=404, detail="survey not found")
+    """Run one survey wave over a cohort (shared by the API route and the demo seeder)."""
     structure = survey.structure or {}
-    personas = await _cohort_personas(session, cohort_id)
+    personas = await _cohort_personas(session, cohort.id)
     if not personas:
         raise HTTPException(status_code=409, detail="cohort has no personas")
 
@@ -200,7 +192,7 @@ async def run_wave(
             for pd in persona_dicts
         ]
 
-    with use_llm_context("synth", "persona_wave", project_id=cohort.project_id, org_id=principal.org_id):
+    with use_llm_context("synth", "persona_wave", project_id=cohort.project_id, org_id=org_id):
         results = await asyncio.to_thread(_run)
 
     now = datetime.now(UTC).isoformat()
@@ -217,3 +209,18 @@ async def run_wave(
     report["grounded_questions"] = sorted({q for r in results for q in (r.get("grounded") or [])})
     log.info("cohort %s wave %d run on survey %s", cohort.id, wave, survey.id)
     return report
+
+
+@router.post("/persona-cohorts/{cohort_id}/run")
+async def run_wave(
+    cohort_id: uuid.UUID,
+    body: RunWaveIn,
+    session: SessionDep,
+    principal: Annotated[Principal, Depends(require_role(Role.ANALYST))],
+) -> dict[str, Any]:
+    """Survey the cohort: each persona answers in-character + consistent with prior waves."""
+    cohort = await _require_cohort(session, principal, cohort_id)
+    survey = await session.get(Survey, body.survey_id)
+    if survey is None or survey.org_id != principal.org_id:
+        raise HTTPException(status_code=404, detail="survey not found")
+    return await execute_wave(session, cohort, survey, org_id=principal.org_id)

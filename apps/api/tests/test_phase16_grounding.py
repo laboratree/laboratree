@@ -94,6 +94,21 @@ def test_engine_selection_and_unknown_backend(monkeypatch):
         assert "tinytroupe" in str(exc)  # honest failure, never a silent fake
 
 
+def test_wave_falls_back_deterministically_without_llm_key(monkeypatch):
+    # no API key -> the wave still runs, reproducibly, and says so (never silently)
+    from laboratree.core.config import settings
+    from laboratree.labs.synth.fallback import deterministic_wave_answers
+
+    monkeypatch.setattr(settings, "llm_provider", "azure")
+    monkeypatch.setattr(settings, "azure_openai_api_key", "")
+    persona = _persona("p3")
+    result = LLMPersonaEngine().simulate(STRUCT, persona)
+    assert result["answers"]["q_plain"] in ("yes", "no")
+    assert set(result["grounded"]) == {"q_choice", "q_risk"}   # theory still decides its questions
+    # pure fallback is deterministic per persona
+    assert deterministic_wave_answers(STRUCT, persona) == deterministic_wave_answers(STRUCT, persona)
+
+
 # ----------------------------- integration -----------------------------
 
 def test_wave_run_reports_grounded_questions(monkeypatch):
