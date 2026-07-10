@@ -56,6 +56,11 @@ export const KIND_META: Record<
     hint: "Manual stage — human work outside the platform",
     badgeClass: "bg-[#F1F3F0] text-muted",
   },
+  agent: {
+    badge: "🤖 DEEP AGENT",
+    hint: "Fulfilled by the DeepAgent (supervised run): tools + reasoning, Evidence-locked",
+    badgeClass: "bg-[#F3EEFB] text-[#8B5CF6]",
+  },
 };
 
 const STATUS_META: Record<StepStatus, { label: string; className: string }> = {
@@ -65,13 +70,16 @@ const STATUS_META: Record<StepStatus, { label: string; className: string }> = {
   failed: { label: "✕ failed", className: "text-red-600" },
 };
 
+// component + agent stages are run-driven; lab/manual completion belongs to the user
+const RUN_DRIVEN: ReadonlySet<string> = new Set(["component", "agent"]);
+
 export function stageStatusMeta(s: StageState): { label: string; className: string } {
-  if (s.kind !== "component") {
+  if (!RUN_DRIVEN.has(s.kind)) {
     return s.markedDone ? STATUS_META.succeeded : { label: "○ to do", className: "text-muted" };
   }
   return STATUS_META[s.status];
 }
 
 export function isStageComplete(s: StageState): boolean {
-  return s.kind === "component" ? s.status === "succeeded" : s.markedDone;
+  return RUN_DRIVEN.has(s.kind) ? s.status === "succeeded" : s.markedDone;
 }

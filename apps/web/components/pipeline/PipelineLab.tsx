@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Background, Controls, MiniMap, ReactFlow, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Papa from "papaparse";
-import { Api, demoApi, flowsApi, type ComponentSpecLite, type PipelineResult } from "@/lib/api";
+import {
+  Api, demoApi, flowsApi,
+  type ComponentSpecLite, type PipelineResult, type SuperviseReport,
+} from "@/lib/api";
 import { FLOW_TEMPLATES, type FlowNodeKind, type FlowPhase } from "@/lib/pipelineTemplates";
 import type { LabTabKey } from "@/lib/labTabs";
 import FileDropzone from "@/components/FileDropzone";
@@ -33,6 +36,8 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seedNote, setSeedNote] = useState<string | null>(null);
+  const [pendingGate, setPendingGate] = useState<
+    { threadId: string; stageId: string; summary: string } | null>(null);
 
   useEffect(() => {
     Api.listComponents().then((r) => setComponents(r.components)).catch(() => setComponents([]));
@@ -64,8 +69,11 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
     const stage: StageState = kind === "component"
       ? { ...base, kind, label: components[0]?.name ?? "Component",
           description: "Runnable step.", componentId: components[0]?.id, params: {} }
-      : { ...base, kind, label: kind === "lab" ? "Lab stage" : "Manual stage",
-          description: "Describe this stage." };
+      : kind === "agent"
+        ? { ...base, kind, label: "Agent stage",
+            description: "Describe the objective — the DeepAgent works it with tools on a supervised run." }
+        : { ...base, kind, label: kind === "lab" ? "Lab stage" : "Manual stage",
+            description: "Describe this stage." };
     setStages((s) => [...s, stage]);
     setSelectedId(id);
   }
@@ -129,7 +137,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
       const seed = await demoApi.seed(projectId);
       setRows(seed.rows);
       setFileName(`demo · ${seed.scenario}`);
-      const template = FLOW_TEMPLATES.find((t) => t.key === "ngo-policy");
+      const template = FLOW_TEMPLATES.find((t) => t.key === "policy-research");
       if (template) {
         setFlowName(template.name);
         setPhases(template.phases);
@@ -137,7 +145,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
         // hypothesis runs, shared report) — reflect that as completed with the artifact note.
         setStages(template.stages.map((s) => {
           const artifact = seed.stages?.[s.id];
-          const activated = s.kind !== "component" && s.kind !== "manual" && !!artifact;
+          const activated = s.kind === "lab" && !!artifact;
           return {
             ...s,
             status: "idle" as StepStatus,
@@ -163,6 +171,39 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
 
   const flowKey = FLOW_TEMPLATES.find((t) => t.name === flowName)?.key;
 
+  const applySuperviseReport = useCallback((report: SuperviseReport) => {
+    const byId = new Map(report.stages.map((r) => [r.id, r]));
+    const runDriven = (kind: string) => kind === "component" || kind === "agent";
+    setStages((all) => all.map((s) => {
+      const r = byId.get(s.id);
+      if (!r) return { ...s, status: "idle" as StepStatus };
+      const succeeded = r.status === "succeeded";
+      return {
+        ...s,
+        status: (runDriven(s.kind)
+          ? (succeeded ? "succeeded" : r.status === "failed" ? "failed" : "idle")
+          : "idle") as StepStatus,
+        markedDone: !runDriven(s.kind) && succeeded,
+        result: r.run_id
+          ? { component_id: s.componentId ?? r.id, status: r.status,
+              run_id: r.run_id, evidence_count: r.evidence,
+              error: r.error ?? undefined, preview: r.artifacts }
+          : undefined,
+        description: r.summary ? `${s.description} — ⚡ ${r.summary}` : s.description,
+      };
+    }));
+    setPendingGate(report.status === "paused" && report.pending_gate
+      ? { threadId: report.thread_id, stageId: report.pending_gate.stage_id,
+          summary: report.pending_gate.summary ?? "" }
+      : null);
+    const done = report.stages.filter((r) => r.status === "succeeded").length;
+    setSeedNote(
+      `Supervised run ${report.status}: ${done}/${report.stages.length} phases · `
+      + `${report.evidence_total} Evidence · lab agents: ${report.labs.join(", ") || "—"}`
+      + (report.status === "paused" ? " · waiting on your gate decision below." : ""),
+    );
+  }, []);
+
   async function runOrchestrated() {
     if (!flowKey) return;
     setBusy(true);
@@ -170,36 +211,30 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
     setSeedNote(null);
     setStages((all) => all.map((s) => ({ ...s, status: "running" as StepStatus })));
     try {
-      const report = await flowsApi.run(projectId, flowKey, stages.map((s) => s.id));
-      const byId = new Map(report.stages.map((r) => [r.id, r]));
-      setStages((all) => all.map((s) => {
-        const r = byId.get(s.id);
-        if (!r) return { ...s, status: "idle" as StepStatus };
-        const succeeded = r.status === "succeeded";
-        return {
-          ...s,
-          status: (s.kind === "component"
-            ? (succeeded ? "succeeded" : r.status === "failed" ? "failed" : "idle")
-            : "idle") as StepStatus,
-          markedDone: s.kind !== "component" && succeeded,
-          result: r.run_id
-            ? { component_id: s.componentId ?? r.id, status: r.status,
-                run_id: r.run_id, evidence_count: r.evidence,
-                error: r.error ?? undefined, preview: r.artifacts }
-            : undefined,
-          description: r.summary ? `${s.description} — ⚡ ${r.summary}` : s.description,
-        };
-      }));
-      setSeedNote(
-        `Orchestrated run ${report.status}: ${report.stages.filter((r) => r.status === "succeeded").length}`
-        + `/${report.stages.length} phases, ${report.evidence_total} Evidence, `
-        + `${report.gates_opened} gate${report.gates_opened === 1 ? "" : "s"} awaiting approval.`,
-      );
+      // agent stages carry their objective in the description — the DeepAgent works from it
+      const objectives = Object.fromEntries(
+        stages.filter((s) => s.kind === "agent").map((s) => [s.id, s.description]));
+      const report = await flowsApi.supervise(
+        projectId, flowKey, stages.map((s) => s.id), objectives);
+      applySuperviseReport(report);
     } catch (e) {
-      setError(e instanceof Error ? `orchestrated run failed: ${e.message}` : "run failed");
+      setError(e instanceof Error ? `supervised run failed: ${e.message}` : "run failed");
       setStages((all) =>
         all.map((s) => (s.status === "running" ? { ...s, status: "idle" as StepStatus } : s)),
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resolveGate(approved: boolean) {
+    if (!pendingGate) return;
+    setBusy(true);
+    setError(null);
+    try {
+      applySuperviseReport(await flowsApi.resume(pendingGate.threadId, approved));
+    } catch (e) {
+      setError(e instanceof Error ? `resume failed: ${e.message}` : "resume failed");
     } finally {
       setBusy(false);
     }
@@ -244,11 +279,11 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
               className="rounded-full bg-leaf px-5 py-2 text-sm font-bold text-white shadow-[0_2px_12px_rgba(109,179,63,0.5)] transition hover:-translate-y-px hover:opacity-90 disabled:opacity-50 disabled:shadow-none">
               {busy ? "Running…" : `▶ Run ${runnableCount} step${runnableCount === 1 ? "" : "s"}`}
             </button>
-            {flowKey === "ngo-policy" && (
+            {!!flowKey && (
               <button onClick={runOrchestrated} disabled={busy || stages.length === 0}
-                title="Every phase runs as a sub-agent: analyses execute, the survey publishes and fields, personas simulate, the report composes — human steps open gates."
+                title="Supervised run: the Supervisor dispatches every phase to its Lab agent, spawns the DeepAgent for uncovered stages, and pauses at human gates — durable and resumable."
                 className="rounded-full border border-[#A8D08D]/50 bg-white/10 px-5 py-2 text-sm font-bold text-white transition hover:bg-white/20 disabled:opacity-50">
-                {busy ? "Orchestrating…" : "⚡ Orchestrate flow"}
+                {busy ? "Supervising…" : "⚡ Supervise flow"}
               </button>
             )}
           </div>
@@ -296,6 +331,10 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
             + 🧪 Lab stage
           </button>
+          <button onClick={() => addStage("agent")}
+            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
+            + 🤖 Agent stage
+          </button>
           <button onClick={() => addStage("manual")}
             className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
             + 👤 Manual stage
@@ -317,6 +356,25 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             hint={rows.length ? `${fileName} · ${rows.length} rows` : "Drop a starting CSV for the runnable steps (optional)"}
             onFiles={loadCsv} />
           {seedNote && <p className="mt-2 text-sm text-forest">🌱 {seedNote}</p>}
+          {pendingGate && (
+            <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5">
+              <span className="text-sm text-amber-900">
+                ⏸ Gate open at <span className="font-bold">{pendingGate.stageId}</span>
+                {pendingGate.summary ? ` — ${pendingGate.summary}` : ""}. The run is checkpointed
+                and waiting on you.
+              </span>
+              <span className="flex gap-2">
+                <button onClick={() => resolveGate(true)} disabled={busy}
+                  className="rounded-full bg-leaf px-4 py-1 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50">
+                  ✓ Approve & continue
+                </button>
+                <button onClick={() => resolveGate(false)} disabled={busy}
+                  className="rounded-full border border-red-300 px-4 py-1 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                  ✕ Reject
+                </button>
+              </span>
+            </div>
+          )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </div>
       </div>

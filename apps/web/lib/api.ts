@@ -1351,10 +1351,25 @@ export type FlowRunReport = {
   gates_opened: number;
   evidence_total: number;
 };
+export type SuperviseReport = {
+  thread_id: string;
+  status: "paused" | "completed";
+  pending_gate: { stage_id: string; gate_id?: string; summary?: string } | null;
+  stages: (FlowStageResult & { lab?: string })[];
+  labs: string[];
+  evidence_total: number;
+  gates_opened: number;
+};
 export const flowsApi = {
   run: (projectId: string, flowKey: string, stages?: string[]) =>
     apiPost<FlowRunReport>(`/api/projects/${projectId}/flows/${flowKey}/run`,
       stages ? { stages } : {}),
+  supervise: (projectId: string, flowKey: string, stages?: string[],
+              objectives?: Record<string, string>) =>
+    apiPost<SuperviseReport>(`/api/projects/${projectId}/flows/${flowKey}/supervise`,
+      { ...(stages ? { stages } : {}), objectives: objectives ?? {} }),
+  resume: (threadId: string, approved: boolean, note = "") =>
+    apiPost<SuperviseReport>(`/api/flows/threads/${threadId}/resume`, { approved, note }),
 };
 
 // ---------------- Persona Lab ----------------

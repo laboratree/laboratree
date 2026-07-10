@@ -22,19 +22,30 @@ export default function StageDrawer({
   stages, phases, selectedId, components, onPatch, onRemove, onSelect, onOpenLab,
 }: StageDrawerProps) {
   const [paramsError, setParamsError] = useState<string | null>(null);
+  const [showAllComponents, setShowAllComponents] = useState(false);
 
   const index = stages.findIndex((s) => s.id === selectedId);
   const stage = index >= 0 ? stages[index] : null;
 
+  // Task-specific picker: a stage's curated suggestions (plus its current pick) unless the
+  // user asks for the full registry.
+  const offered = useMemo(() => {
+    const suggested = stage?.suggestedComponents;
+    if (showAllComponents || !suggested?.length) return components;
+    const keep = new Set([...suggested, ...(stage?.componentId ? [stage.componentId] : [])]);
+    const subset = components.filter((c) => keep.has(c.id));
+    return subset.length ? subset : components;
+  }, [components, stage?.suggestedComponents, stage?.componentId, showAllComponents]);
+
   const componentsByKind = useMemo(() => {
     const groups = new Map<string, ComponentSpecLite[]>();
-    for (const c of components) {
+    for (const c of offered) {
       const list = groups.get(c.kind) ?? [];
       list.push(c);
       groups.set(c.kind, list);
     }
     return [...groups.entries()];
-  }, [components]);
+  }, [offered]);
 
   if (!stage) return null;
 
@@ -97,7 +108,14 @@ export default function StageDrawer({
         </button>
       )}
 
-      {stage.kind !== "component" && (
+      {stage.kind === "agent" && (
+        <p className="mt-3 rounded-lg bg-[#F3EEFB] p-2 text-xs text-[#6D28D9]">
+          🤖 A supervised run dispatches the DeepAgent here: it works the objective above with
+          search + analysis tools, and its findings land Evidence-locked with a full step trace.
+        </p>
+      )}
+
+      {stage.kind !== "component" && stage.kind !== "agent" && (
         <label className="mt-3 flex items-center gap-2 text-xs text-muted">
           <input
             type="checkbox"
@@ -111,7 +129,20 @@ export default function StageDrawer({
 
       {stage.kind === "component" && (
         <div className="mt-3 space-y-2">
-          <label className="block text-xs text-muted">Component</label>
+          <div className="flex items-center justify-between">
+            <label className="block text-xs text-muted">
+              Component{!showAllComponents && stage.suggestedComponents?.length
+                ? " · suggested for this phase" : ""}
+            </label>
+            {!!stage.suggestedComponents?.length && (
+              <button
+                onClick={() => setShowAllComponents((v) => !v)}
+                className="text-[10px] text-[#2563EB] hover:underline"
+              >
+                {showAllComponents ? "show suggested only" : "show all components"}
+              </button>
+            )}
+          </div>
           {components.length === 0 ? (
             <p className="text-xs text-muted">No components loaded — is the API running?</p>
           ) : (
