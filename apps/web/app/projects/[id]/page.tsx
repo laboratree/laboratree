@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Api, openBlob, type Project } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth";
+import { LAB_TABS, type LabTabKey } from "@/lib/labTabs";
 
 // Each Lab is loaded on demand (only when its tab is opened) so the project page opens fast and
 // heavy deps (React Flow, vega, papaparse) aren't pulled into the initial route bundle.
@@ -25,22 +26,9 @@ const DeliverablesLab = dyn(() => import("@/components/DeliverablesLab"));
 const PersonaLab = dyn(() => import("@/components/PersonaLab"));
 const PipelineLab = dyn(() => import("@/components/PipelineLab"));
 const LlmActivity = dyn(() => import("@/components/LlmActivity"));
+const LearningLab = dyn(() => import("@/components/LearningLab"));
 
-const TABS = [
-  { key: "ideation", label: "Ideation Lab" },
-  { key: "collection", label: "Collection Lab" },
-  { key: "field", label: "Field Lab" },
-  { key: "panel", label: "Panel" },
-  { key: "personas", label: "Persona Lab" },
-  { key: "qual", label: "Qual Studio" },
-  { key: "signal", label: "Signal Lab" },
-  { key: "insight", label: "Insight Lab" },
-  { key: "papers", label: "Paper Lab" },
-  { key: "deliver", label: "Deliverables" },
-  { key: "pipeline", label: "Pipeline" },
-  { key: "llm", label: "LLM Activity" },
-] as const;
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = LabTabKey;
 
 export default function ProjectWorkspace() {
   const { user, loading } = useRequireAuth();
@@ -100,7 +88,7 @@ export default function ProjectWorkspace() {
       </div>
 
       <div className="mt-6 flex gap-2 border-b border-line">
-        {TABS.map((t) => (
+        {LAB_TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -125,6 +113,7 @@ export default function ProjectWorkspace() {
         {tab === "signal" && <SignalLab projectId={projectId} />}
         {tab === "insight" && <InsightLab projectId={projectId} />}
         {tab === "papers" && <PapersLab projectId={projectId} />}
+        {tab === "learning" && <LearningLab projectId={projectId} />}
         {tab === "deliver" && <DeliverablesLab projectId={projectId} />}
         {tab === "pipeline" && <PipelineLab projectId={projectId} />}
         {tab === "llm" && <LlmActivity projectId={projectId} />}
