@@ -9,10 +9,33 @@ export type StageState = FlowStage & {
   result?: PipelineStepResult;
 };
 
+// Each phase lane gets its own accent color (mission-control look): lane tint, node top
+// bar, and number chip all derive from it. Custom (user-added) lanes stay neutral.
+export const PHASE_ACCENTS = [
+  "#5B6ECC", // understand — indigo
+  "#0E8A7D", // design — teal
+  "#2563EB", // field — blue
+  "#D97706", // analyze — amber
+  "#8B5CF6", // decide — violet
+  "#3E7D32", // monitor — green
+] as const;
+export const CUSTOM_ACCENT = "#5B6B60";
+
 // Data payloads for the custom React Flow nodes (type aliases, not interfaces — they need
 // the implicit index signature to satisfy React Flow's Record<string, unknown> constraint).
-export type StageNodeData = { stage: StageState; phaseNumber: number; selected: boolean };
-export type LaneNodeData = { title: string; blurb: string; done: number; total: number };
+export type StageNodeData = {
+  stage: StageState;
+  phaseNumber: number;
+  selected: boolean;
+  accent: string;
+};
+export type LaneNodeData = {
+  title: string;
+  blurb: string;
+  done: number;
+  total: number;
+  accent: string;
+};
 
 export const KIND_META: Record<
   FlowNodeKind,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Background, Controls, ReactFlow, type NodeTypes } from "@xyflow/react";
+import { Background, Controls, MiniMap, ReactFlow, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Papa from "papaparse";
 import { Api, demoApi, flowsApi, type ComponentSpecLite, type PipelineResult } from "@/lib/api";
@@ -218,58 +218,76 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-line bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="overflow-hidden rounded-2xl border border-line bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-forest to-[#1F5A43] px-5 py-4">
           <div className="min-w-[240px]">
-            <h2 className="font-display text-xl text-forest">
+            <h2 className="font-display text-xl text-white">
               {flowName}
-              <span className="ml-2 text-sm text-muted">
+              <span className="ml-2 text-sm text-[#A8D08D]">
                 · {stages.length} phases · {runnableCount} runnable
               </span>
             </h2>
             <div className="mt-2 flex items-center gap-2">
-              <div className="h-1.5 w-56 overflow-hidden rounded-full bg-[#EEF3EA]">
+              <div className="h-1.5 w-56 overflow-hidden rounded-full bg-white/20">
                 <div
-                  className="h-full rounded-full bg-leaf transition-all duration-500"
+                  className="h-full rounded-full bg-gradient-to-r from-leaf to-sprout transition-all duration-700"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
-              <span className="text-xs text-muted">
+              <span className="text-xs font-semibold text-[#A8D08D]">
                 {completeCount} / {stages.length} complete
               </span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {FLOW_TEMPLATES.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => loadTemplate(t.key)}
-                title={t.tagline}
-                className="rounded-full border border-leaf px-3 py-1.5 text-sm text-forest hover:bg-leaf/10"
-              >
-                {t.name}
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={runFlow} disabled={busy || runnableCount === 0}
+              className="rounded-full bg-leaf px-5 py-2 text-sm font-bold text-white shadow-[0_2px_12px_rgba(109,179,63,0.5)] transition hover:-translate-y-px hover:opacity-90 disabled:opacity-50 disabled:shadow-none">
+              {busy ? "Running…" : `▶ Run ${runnableCount} step${runnableCount === 1 ? "" : "s"}`}
+            </button>
+            {flowKey === "ngo-policy" && (
+              <button onClick={runOrchestrated} disabled={busy || stages.length === 0}
+                title="Every phase runs as a sub-agent: analyses execute, the survey publishes and fields, personas simulate, the report composes — human steps open gates."
+                className="rounded-full border border-[#A8D08D]/50 bg-white/10 px-5 py-2 text-sm font-bold text-white transition hover:bg-white/20 disabled:opacity-50">
+                {busy ? "Orchestrating…" : "🤖 Run whole flow"}
               </button>
-            ))}
-            <button
-              onClick={seedDemo}
-              disabled={busy}
-              title="Seed a realistic NGO education scenario (dataset + evidence + survey + personas) and load the flow"
-              className="rounded-full bg-forest px-3 py-1.5 text-sm text-white hover:bg-forest/90 disabled:opacity-50"
-            >
-              🌱 Load demo scenario
-            </button>
-            <button
-              onClick={() => {
-                setStages([]); setPhases([]); setFlowName("Blank canvas"); setSelectedId(null);
-              }}
-              className="rounded-full border border-line px-3 py-1.5 text-sm text-ink/60 hover:bg-bg"
-            >
-              Clear
-            </button>
+            )}
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 px-5 pt-4 text-sm">
+          {FLOW_TEMPLATES.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => loadTemplate(t.key)}
+              title={t.tagline}
+              className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                t.name === flowName
+                  ? "border-forest bg-forest text-white"
+                  : "border-leaf text-forest hover:bg-leaf/10"
+              }`}
+            >
+              {t.name}
+            </button>
+          ))}
+          <button
+            onClick={seedDemo}
+            disabled={busy}
+            title="Seed a realistic NGO education scenario (dataset + evidence + survey + personas) and load the flow"
+            className="rounded-full bg-leaf/15 px-3 py-1.5 text-sm font-semibold text-forest hover:bg-leaf/25 disabled:opacity-50"
+          >
+            🌱 Load demo scenario
+          </button>
+          <button
+            onClick={() => {
+              setStages([]); setPhases([]); setFlowName("Blank canvas"); setSelectedId(null);
+            }}
+            className="rounded-full border border-line px-3 py-1.5 text-sm text-ink/60 hover:bg-bg"
+          >
+            Clear
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 px-5 py-3 text-sm">
           <button onClick={() => addStage("component")}
             className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
             + ⚙️ Component
@@ -283,18 +301,6 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             + 👤 Manual stage
           </button>
           <span className="mx-2 h-5 w-px bg-line" />
-          <button onClick={runFlow} disabled={busy || runnableCount === 0}
-            className="rounded-lg bg-leaf px-4 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-50">
-            {busy ? "Running…" : `▶ Run ${runnableCount} runnable step${runnableCount === 1 ? "" : "s"}`}
-          </button>
-          {flowKey === "ngo-policy" && (
-            <button onClick={runOrchestrated} disabled={busy || stages.length === 0}
-              title="Every phase runs as a sub-agent: analyses execute, the survey publishes and fields, personas simulate, the report composes — human steps open gates."
-              className="rounded-lg bg-forest px-4 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-50">
-              {busy ? "Orchestrating…" : "🤖 Run whole flow"}
-            </button>
-          )}
-          <span className="mx-2 h-5 w-px bg-line" />
           {(Object.keys(KIND_META) as (keyof typeof KIND_META)[]).map((k) => (
             <span
               key={k}
@@ -306,18 +312,29 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
           ))}
         </div>
 
-        <div className="mt-3">
+        <div className="px-5 pb-4">
           <FileDropzone multiple={false} accept=".csv"
             hint={rows.length ? `${fileName} · ${rows.length} rows` : "Drop a starting CSV for the runnable steps (optional)"}
             onFiles={loadCsv} />
+          {seedNote && <p className="mt-2 text-sm text-forest">🌱 {seedNote}</p>}
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </div>
-        {seedNote && <p className="mt-2 text-sm text-forest">🌱 {seedNote}</p>}
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </div>
+
+      {stages.length === 0 && (
+        <div className="flex h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-leaf/40 bg-[#F7FAF5] text-center">
+          <span className="text-4xl">🧭</span>
+          <p className="mt-3 font-display text-lg text-forest">Choose a research flow above</p>
+          <p className="mt-1 max-w-md text-sm text-muted">
+            Load a pre-configured lifecycle — every phase becomes a card on the canvas, grouped
+            into color-coded lanes, with a closer look and lab deep-links one click away.
+          </p>
+        </div>
+      )}
 
       {stages.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
-          <div className="h-[560px] overflow-hidden rounded-2xl border border-line bg-white">
+          <div className="h-[680px] overflow-hidden rounded-2xl border border-line bg-[#F7FAF5]">
             <ReactFlow
               nodes={graph.nodes}
               edges={graph.edges}
@@ -328,11 +345,26 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
                 if (node.type === "stage") setSelectedId(node.id);
               }}
               onPaneClick={() => setSelectedId(null)}
-              fitView
+              defaultViewport={{ x: 24, y: 20, zoom: 0.8 }}
+              minZoom={0.35}
+              maxZoom={1.6}
+              panOnScroll
+              zoomOnScroll={false}
               proOptions={{ hideAttribution: true }}
             >
-              <Background color="#E4EBE1" />
+              <Background color="#DCE7D6" gap={22} />
               <Controls showInteractive={false} />
+              <MiniMap
+                pannable
+                zoomable
+                className="!h-28 !w-40"
+                nodeColor={(n) =>
+                  n.type === "lane"
+                    ? "#E7F0E3"
+                    : ((n.data as { accent?: string }).accent ?? "#6DB33F")
+                }
+                maskColor="rgba(20, 52, 42, 0.08)"
+              />
             </ReactFlow>
           </div>
 
@@ -349,10 +381,12 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
               onOpenLab={onOpenLab}
             />
           ) : (
-            <div className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-sm text-ink/50">
-                Select a phase on the canvas for a closer look — its story, controls, and
-                results appear here.
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-white p-6 text-center">
+              <span className="text-2xl">🔍</span>
+              <p className="mt-2 text-sm font-semibold text-forest">Closer look</p>
+              <p className="mt-1 text-xs text-muted">
+                Click any phase card on the canvas — its story, controls, evidence, and lab
+                deep-link appear here.
               </p>
             </div>
           )}

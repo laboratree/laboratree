@@ -1,6 +1,13 @@
 import type { Edge, Node } from "@xyflow/react";
 import { CUSTOM_PHASE, type FlowPhase } from "@/lib/pipelineTemplates";
-import { isStageComplete, type LaneNodeData, type StageNodeData, type StageState } from "./types";
+import {
+  CUSTOM_ACCENT,
+  isStageComplete,
+  PHASE_ACCENTS,
+  type LaneNodeData,
+  type StageNodeData,
+  type StageState,
+} from "./types";
 
 // Card and lane geometry. StageNode renders at exactly CARD_W × CARD_H (see StageNode.tsx);
 // lanes are sized from their children so nothing overlaps.
@@ -43,9 +50,13 @@ export function buildFlowGraph(args: {
 
   const nodes: Node[] = [];
   let laneY = 0;
-  for (const phase of lanePhases) {
+  for (const [laneIndex, phase] of lanePhases.entries()) {
     const members = laneStages.get(phase.key)!;
     if (members.length === 0) continue;
+    const accent =
+      phase.key === CUSTOM_PHASE.key
+        ? CUSTOM_ACCENT
+        : PHASE_ACCENTS[laneIndex % PHASE_ACCENTS.length];
     const rows = Math.ceil(members.length / WRAP_AT);
     const laneH = LANE_HEADER_H + rows * CARD_H + (rows - 1) * GAP_Y + LANE_PAD_BOTTOM;
 
@@ -54,6 +65,7 @@ export function buildFlowGraph(args: {
       blurb: phase.blurb,
       done: members.filter(isStageComplete).length,
       total: members.length,
+      accent,
     };
     nodes.push({
       id: `lane-${phase.key}`,
@@ -73,6 +85,7 @@ export function buildFlowGraph(args: {
         stage,
         phaseNumber: phaseNumber.get(stage.id)!,
         selected: stage.id === selectedId,
+        accent,
       };
       nodes.push({
         id: stage.id,

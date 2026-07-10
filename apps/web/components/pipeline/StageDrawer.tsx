@@ -46,37 +46,40 @@ export default function StageDrawer({
   const next = index < stages.length - 1 ? stages[index + 1] : null;
 
   return (
-    <div className="animate-drawer-in rounded-2xl border border-line border-l-4 border-l-leaf bg-white p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold tracking-wider text-muted">
-          CLOSER LOOK · PHASE {index + 1} · {phase.title.toUpperCase()}
-        </span>
-        <button
-          onClick={() => onRemove(stage.id)}
-          className="text-xs text-red-600 hover:underline"
-        >
-          remove
-        </button>
+    <div className="animate-drawer-in overflow-hidden rounded-2xl border border-line bg-white">
+      <div className="bg-gradient-to-r from-forest to-[#1F5A43] px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] font-extrabold tracking-[0.14em] text-sprout">
+            CLOSER LOOK · PHASE {index + 1} · {phase.title.toUpperCase()}
+          </span>
+          <button
+            onClick={() => onRemove(stage.id)}
+            className="text-[10px] text-white/50 hover:text-red-300 hover:underline"
+          >
+            remove
+          </button>
+        </div>
+        <input
+          value={stage.label}
+          onChange={(e) => onPatch(stage.id, { label: e.target.value })}
+          className="mt-1 w-full rounded-lg border border-transparent bg-transparent px-1 py-0.5 font-display text-lg text-white outline-none transition focus:border-white/30 focus:bg-white/10"
+        />
+        <div className="mt-1.5 flex items-center gap-2">
+          <span
+            title={kind.hint}
+            className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold text-[#A8D08D]"
+          >
+            {kind.badge}
+            {stage.kind === "lab" && stage.labTab ? ` · ${labTabLabel(stage.labTab)}` : ""}
+          </span>
+          <span className={`rounded-full bg-white px-2 py-0.5 text-[10px] font-bold ${status.className}`}>
+            {status.label}
+          </span>
+        </div>
       </div>
 
-      <input
-        value={stage.label}
-        onChange={(e) => onPatch(stage.id, { label: e.target.value })}
-        className="mt-2 w-full rounded-lg border border-line px-2 py-1.5 font-display text-base text-forest"
-      />
-
-      <div className="mt-2 flex items-center gap-2">
-        <span
-          title={kind.hint}
-          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${kind.badgeClass}`}
-        >
-          {kind.badge}
-          {stage.kind === "lab" && stage.labTab ? ` · ${labTabLabel(stage.labTab)}` : ""}
-        </span>
-        <span className={`text-xs font-semibold ${status.className}`}>{status.label}</span>
-      </div>
-
-      <label className="mt-3 block text-xs text-muted">What happens here</label>
+      <div className="p-4 pt-3">
+      <label className="block text-xs text-muted">What happens here</label>
       <textarea
         value={stage.description}
         onChange={(e) => onPatch(stage.id, { description: e.target.value })}
@@ -88,7 +91,7 @@ export default function StageDrawer({
         <button
           onClick={() => onOpenLab?.(stage.labTab!)}
           disabled={!onOpenLab}
-          className="mt-3 w-full rounded-lg bg-[#2563EB] py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          className="mt-3 w-full rounded-full bg-[#2563EB] py-2 text-xs font-bold text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)] transition hover:-translate-y-px hover:opacity-90 disabled:opacity-50"
         >
           Open in {labTabLabel(stage.labTab)} →
         </button>
@@ -190,6 +193,7 @@ export default function StageDrawer({
         ) : (
           <span />
         )}
+      </div>
       </div>
     </div>
   );
