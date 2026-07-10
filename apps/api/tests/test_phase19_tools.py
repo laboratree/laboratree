@@ -75,7 +75,8 @@ def test_arxiv_search_parses_atom_and_fails_open(monkeypatch):
     assert hits[0].description == "Distance matters."
 
     monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
-    assert arxiv_search("dropout", 5) == []            # fail-open, never raises
+    # different query (providers are TTL-memoized) — provider down -> fail-open, never raises
+    assert arxiv_search("attendance", 5) == []
 
 
 def test_reddit_search_parses_listing_and_fails_open(monkeypatch):

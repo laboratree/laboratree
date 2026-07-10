@@ -10,18 +10,25 @@ from fastapi import APIRouter, HTTPException, Query
 from laboratree_sdk import ComponentKind
 from laboratree_sdk.registry import UnknownComponentError
 
+from ..core.cache import cache_key, cached_json
+from ..core.config import settings
 from ..core.registry import REGISTRY
 
 router = APIRouter(prefix="/api/components", tags=["components"])
 
 
 @router.get("")
-def list_components(
+async def list_components(
     kind: ComponentKind | None = Query(default=None),
     tag: list[str] | None = Query(default=None),
 ) -> dict:
-    specs = REGISTRY.specs(kind=kind, tags=tag)
-    return {"count": len(specs), "components": [s.model_dump() for s in specs]}
+    async def _compute() -> dict:
+        specs = REGISTRY.specs(kind=kind, tags=tag)
+        return {"count": len(specs), "components": [s.model_dump() for s in specs]}
+
+    # registry size in the key auto-busts the cache when new components are discovered
+    key = cache_key("components", "global", kind, tag, len(REGISTRY.ids()))
+    return await cached_json(key, settings.catalog_cache_ttl_s, _compute)
 
 
 @router.get("/{component_id}")

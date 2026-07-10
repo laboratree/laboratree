@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from ..agents import flow as flow_engine
 from ..agents import supervisor
 from ..agents.flow import scenarios  # noqa: F401 — importing registers every scenario's executors
+from ..core.cache import cache_key, cached_json
+from ..core.config import settings
 from ..core.deps import Principal, SessionDep, require_role
 from ..projects.models import Project
 from ..tenancy.models import Role
@@ -74,13 +76,17 @@ class ResumeIn(BaseModel):
 
 @router.get("/flows")
 async def list_flows() -> dict[str, Any]:
-    return {
-        "flows": [
-            {"key": key, "stages": stages,
-             "executors": flow_engine.registered_stages(key)}
-            for key, stages in DEFAULT_STAGES.items()
-        ]
-    }
+    async def _compute() -> dict[str, Any]:
+        return {
+            "flows": [
+                {"key": key, "stages": stages,
+                 "executors": flow_engine.registered_stages(key)}
+                for key, stages in DEFAULT_STAGES.items()
+            ]
+        }
+
+    key = cache_key("flows", "global", sorted(DEFAULT_STAGES))
+    return await cached_json(key, settings.catalog_cache_ttl_s, _compute)
 
 
 @router.post("/projects/{project_id}/flows/{flow_key}/run")

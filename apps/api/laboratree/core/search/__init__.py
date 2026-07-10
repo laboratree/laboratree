@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from ..cache import memoize_ttl
 from ..config import settings
 
 log = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ def _serpapi(query: str, count: int) -> list[SearchHit]:
 _PROVIDERS = {"brave": _brave, "serpapi": _serpapi}
 
 
+@memoize_ttl(settings.search_cache_ttl_s)
 def web_search(query: str, count: int | None = None) -> list[SearchHit]:
     """Search the open web. Tries the configured provider first, then the other as a fallback.
     Returns [] if search is disabled (`web_search_provider="none"`) or no key is set."""
@@ -228,6 +230,7 @@ def _doi_key(url: str) -> str:
     return low
 
 
+@memoize_ttl(settings.search_cache_ttl_s)
 def arxiv_search(query: str, count: int) -> list[SearchHit]:
     """Search arXiv (export.arxiv.org) — free, keyless preprints; Atom feed parsed with stdlib."""
     import xml.etree.ElementTree as ET
@@ -258,6 +261,7 @@ def arxiv_search(query: str, count: int) -> list[SearchHit]:
         return []
 
 
+@memoize_ttl(settings.search_cache_ttl_s)
 def reddit_search(query: str, count: int | None = None) -> list[SearchHit]:
     """Search Reddit's public JSON API — keyless consumer/community sentiment (market research).
 
@@ -297,6 +301,7 @@ def reddit_search(query: str, count: int | None = None) -> list[SearchHit]:
         return []
 
 
+@memoize_ttl(settings.search_cache_ttl_s)
 def research_search(query: str, count: int | None = None) -> list[SearchHit]:
     """Evidence search for the Ideation deep agent: real papers first (OpenAlex + Semantic Scholar +
     arXiv — all keyless), then the open web (Brave→SerpAPI) to fill in. Deduped by DOI. Works even

@@ -16,3 +16,13 @@ from laboratree.core.registry import discover  # noqa: E402
 def _discover_components():
     """Ensure all Lab components are registered before any test (idempotent)."""
     discover()
+
+
+@pytest.fixture(autouse=True)
+def _clear_memo_caches():
+    """In-process TTL memos (search providers etc.) must never leak between tests."""
+    from laboratree.core.cache import clear_all_memos
+
+    clear_all_memos()
+    yield
+    clear_all_memos()

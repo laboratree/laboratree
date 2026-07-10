@@ -110,8 +110,12 @@ class Settings(BaseSettings):
 
     # --- Rate limiting + caching (Redis-backed; both fail open if Redis is down) ---
     rate_limit_enabled: bool = True
-    ideation_cache_enabled: bool = True
+    cache_enabled: bool = True                 # master switch (Redis cached_json + sync memos)
+    ideation_cache_enabled: bool = True        # legacy flag — still disables when explicitly off
     ideation_cache_ttl_s: int = 86400          # cache evidence/data-hunt results for a day
+    catalog_cache_ttl_s: int = 300             # component/flow catalogs
+    evidence_cache_ttl_s: int = 30             # evidence picker (short — new runs must appear)
+    search_cache_ttl_s: int = 3600             # search-provider memo (dedupes agent loops)
 
     # --- LLM observability ---
     llm_tracing: bool = True

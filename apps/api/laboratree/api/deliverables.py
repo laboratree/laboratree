@@ -18,6 +18,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.cache import cache_key, cached_json
+from ..core.config import settings
 from ..core.db.postgres import get_session
 from ..core.deps import Principal, PrincipalDep, SessionDep, require_role
 from ..core.ratelimit import check_rate_limit
@@ -138,15 +140,25 @@ async def get_report(report_id: uuid.UUID, session: SessionDep, principal: Princ
 @router.get("/projects/{project_id}/evidence", response_model=list[EvidenceItem])
 async def evidence_picker(
     project_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
-) -> list[EvidenceItem]:
-    """All Evidence across the project's runs — the source for numeric/quote/table/chart blocks."""
+) -> list[dict[str, Any]]:
+    """All Evidence across the project's runs — the source for numeric/quote/table/chart blocks.
+
+    Cached briefly (org-scoped key): the picker is re-fetched on every editor load while its
+    contents only change when a run finishes.
+    """
     await _require_project(session, principal, project_id)
-    rows = await _project_evidence(session, project_id, principal.org_id)
-    return [
-        EvidenceItem(id=e.id, label=e.label, kind=e.kind,
-                     value=(e.value or {}).get("v"), run_id=e.run_id)
-        for e in rows
-    ]
+
+    async def _compute() -> list[dict[str, Any]]:
+        rows = await _project_evidence(session, project_id, principal.org_id)
+        return [
+            {"id": str(e.id), "label": e.label, "kind": e.kind,
+             "value": (e.value or {}).get("v"),
+             "run_id": str(e.run_id) if e.run_id else None}
+            for e in rows
+        ]
+
+    key = cache_key("evidence-picker", project_id, principal.org_id)
+    return await cached_json(key, settings.evidence_cache_ttl_s, _compute)
 
 
 @router.patch("/reports/{report_id}", response_model=ReportOut)

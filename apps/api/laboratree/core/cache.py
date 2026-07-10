@@ -8,15 +8,69 @@ side effects (creating datasets/papers/runs).
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeVar
 
 from .config import settings
 
 log = logging.getLogger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _enabled() -> bool:
+    # cache_enabled is the switch; the legacy ideation flag still disables when explicitly off
+    return settings.cache_enabled and settings.ideation_cache_enabled
+
+
+# process-local TTL memos (for SYNC hot paths like search providers); registered so tests can
+# wipe them between cases
+_MEMO_STORES: list[dict[str, tuple[float, Any]]] = []
+
+
+def memoize_ttl(ttl_s: float, maxsize: int = 256) -> Callable[[F], F]:
+    """In-process TTL memo for synchronous, read-only functions (e.g. search providers).
+
+    Fail-open: unhashable inputs or a disabled cache just call through. On overflow the store
+    resets wholesale (simple + predictable beats LRU bookkeeping here).
+    """
+
+    def _decorate(fn: F) -> F:
+        store: dict[str, tuple[float, Any]] = {}
+        _MEMO_STORES.append(store)
+
+        @functools.wraps(fn)
+        def _wrapper(*args: Any, **kwargs: Any) -> Any:
+            if not _enabled():
+                return fn(*args, **kwargs)
+            try:
+                key = repr((args, sorted(kwargs.items())))
+            except Exception:
+                return fn(*args, **kwargs)
+            now = time.monotonic()
+            hit = store.get(key)
+            if hit is not None and now - hit[0] < ttl_s:
+                return hit[1]
+            result = fn(*args, **kwargs)
+            if len(store) >= maxsize:
+                store.clear()
+            store[key] = (now, result)
+            return result
+
+        return _wrapper  # type: ignore[return-value]
+
+    return _decorate
+
+
+def clear_all_memos() -> None:
+    """Wipe every in-process memo (test hygiene between cases)."""
+    for store in _MEMO_STORES:
+        store.clear()
 
 
 def cache_key(bucket: str, project_id: Any, *parts: Any) -> str:
@@ -27,7 +81,7 @@ def cache_key(bucket: str, project_id: Any, *parts: Any) -> str:
 
 
 async def cache_get(key: str) -> Any | None:
-    if not settings.ideation_cache_enabled:
+    if not _enabled():
         return None
     try:
         from .db.redis import client
@@ -40,7 +94,7 @@ async def cache_get(key: str) -> Any | None:
 
 
 async def cache_set(key: str, value: Any, ttl_s: int) -> None:
-    if not settings.ideation_cache_enabled:
+    if not _enabled():
         return
     try:
         from .db.redis import client
@@ -61,4 +115,5 @@ async def cached_json(key: str, ttl_s: int, compute: Callable[[], Awaitable[Any]
     return result
 
 
-__all__ = ["cache_get", "cache_key", "cache_set", "cached_json"]
+__all__ = ["cache_get", "cache_key", "cache_set", "cached_json",
+           "memoize_ttl", "clear_all_memos"]
