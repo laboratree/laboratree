@@ -279,6 +279,29 @@ def _backdate_start(resume_key: str, minutes: int = 10) -> None:
 
 # ----------------------------- integration: CRUD + publish -----------------------------
 
+def test_create_and_save_empty_draft_then_publish_requires_questions():
+    # regression (browser smoke): a fresh draft may be empty; only PUBLISH requires >=1 question
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+        empty = {"sections": [{"id": "s1", "title": "Section 1", "questions": []}], "logic": []}
+        created = client.post(f"/api/projects/{project_id}/surveys",
+                              json={"title": "Untitled survey", "structure": empty}, headers=headers)
+        assert created.status_code == 201, created.text  # was 422 before the fix
+        sid = created.json()["id"]
+
+        # saving an in-progress (still empty) draft is allowed
+        saved = client.patch(f"/api/surveys/{sid}", json={"structure": empty}, headers=headers)
+        assert saved.status_code == 200, saved.text
+
+        # publishing an empty instrument is refused
+        pub_empty = client.post(f"/api/surveys/{sid}/publish", headers=headers)
+        assert pub_empty.status_code == 422
+
+        # add a question, then publish succeeds
+        client.patch(f"/api/surveys/{sid}", json={"structure": STRUCT}, headers=headers)
+        assert client.post(f"/api/surveys/{sid}/publish", headers=headers).status_code == 200
+
+
 def test_create_rejects_invalid_structure_and_patch_is_draft_only():
     with TestClient(app) as client:
         headers, project_id = _setup(client)

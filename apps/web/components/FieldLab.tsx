@@ -258,8 +258,7 @@ function Builder({
       await surveysApi.setQuotas(survey.id, quotas);
       await surveysApi.setPrereg(survey.id, hypotheses, plannedAnalyses());
       await surveysApi.publish(survey.id);
-      await reload();
-      onChange({ ...survey, title, structure });
+      await reload();  // reload() refreshes the survey to the live state → renders the dashboard
     } catch (e) {
       onError(e instanceof ApiError ? e.message : "publish failed");
     } finally {

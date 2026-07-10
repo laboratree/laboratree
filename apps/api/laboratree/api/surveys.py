@@ -119,8 +119,8 @@ async def _require_survey(
     return survey
 
 
-def _validate_or_422(structure: dict[str, Any]) -> None:
-    errors = validate_structure(structure or {})
+def _validate_or_422(structure: dict[str, Any], *, require_questions: bool = True) -> None:
+    errors = validate_structure(structure or {}, require_questions=require_questions)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
 
@@ -140,7 +140,7 @@ async def create_survey(
 ) -> Survey:
     await _require_project(session, principal, project_id)
     if body.structure:
-        _validate_or_422(body.structure)
+        _validate_or_422(body.structure, require_questions=False)  # a fresh draft may be empty
     survey = Survey(
         org_id=principal.org_id,
         project_id=project_id,
@@ -192,7 +192,7 @@ async def patch_survey(
     if body.title is not None:
         survey.title = body.title
     if body.structure is not None:
-        _validate_or_422(body.structure)
+        _validate_or_422(body.structure, require_questions=False)  # in-progress draft
         survey.structure = body.structure
     await session.commit()
     await session.refresh(survey, attribute_names=["quotas"])

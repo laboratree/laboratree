@@ -62,14 +62,18 @@ def question_by_id(structure: dict[str, Any], qid: str) -> dict[str, Any] | None
 
 # ----------------------------- validation -----------------------------
 
-def validate_structure(structure: dict[str, Any]) -> list[str]:
-    """Return a list of human-readable errors; empty list means the structure is valid."""
+def validate_structure(structure: dict[str, Any], *, require_questions: bool = True) -> list[str]:
+    """Return a list of human-readable errors; empty list means the structure is valid.
+
+    ``require_questions`` gates the "has no questions" error: publish needs it, but a fresh draft
+    (create) or an in-progress draft edit may legitimately have no questions yet.
+    """
     errors: list[str] = []
     if not isinstance(structure, dict):
         return ["structure must be an object"]
 
     questions = iter_questions(structure)
-    if not questions:
+    if not questions and require_questions:
         errors.append("structure has no questions")
 
     qids = [str(q.get("id", "")) for q in questions]
