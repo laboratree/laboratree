@@ -125,13 +125,35 @@ async def execute_component(
     await _store_dataset_artifact(session, run, outputs, org_id)
 
     run.status = RunStatus.SUCCEEDED
-    run.repro_manifest = build_manifest(
-        component=component, data_version=data_version, seed=seed
-    )
+    run.repro_manifest = {
+        **build_manifest(component=component, data_version=data_version, seed=seed),
+        "io": _io_summary(inputs, outputs),   # what flowed in/out — every component gets this
+    }
     await session.commit()
     await session.refresh(run)
     log.info("run %s: component %s succeeded (%d evidence record(s))", run.id, component_id, count)
     return RunResult(run=run, outputs=outputs, evidence_count=count)
+
+
+def _io_summary(inputs: dict[str, Any], outputs: Any) -> dict[str, Any]:
+    """Compact in/out data-flow record (pipeline visibility — Slice C)."""
+    def _df_side(obj: Any) -> dict[str, Any] | None:
+        if hasattr(obj, "shape") and hasattr(obj, "columns"):
+            return {"rows": int(obj.shape[0]), "cols": int(obj.shape[1]),
+                    "columns": [str(c) for c in list(obj.columns)[:20]]}
+        return None
+
+    io: dict[str, Any] = {}
+    dataset_in = _df_side((inputs or {}).get("dataset"))
+    if dataset_in:
+        io["in"] = dataset_in
+    if isinstance(outputs, dict):
+        out: dict[str, Any] = {"keys": [str(k) for k in list(outputs.keys())[:12]]}
+        dataset_out = _df_side(outputs.get("dataset"))
+        if dataset_out:
+            out["dataset"] = dataset_out
+        io["out"] = out
+    return io
 
 
 async def _store_dataset_artifact(

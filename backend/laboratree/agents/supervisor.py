@@ -197,6 +197,7 @@ def _payload(result: dict[str, Any], thread_id: str) -> dict[str, Any]:
     report = result.get("report") or []
     return {
         "thread_id": thread_id,
+        "flow_run_id": result.get("flow_run_id"),
         "status": "paused" if interrupted else "completed",
         "pending_gate": result.get("pending_gate"),
         "stages": report,

@@ -37,6 +37,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seedNote, setSeedNote] = useState<string | null>(null);
+  const [flowRunId, setFlowRunId] = useState<string | null>(null);
   const [pendingGate, setPendingGate] = useState<
     { threadId: string; stageId: string; summary: string } | null>(null);
 
@@ -215,6 +216,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
   const flowKey = FLOW_TEMPLATES.find((t) => t.name === flowName)?.key;
 
   const applySuperviseReport = useCallback((report: SuperviseReport) => {
+    if (report.flow_run_id) setFlowRunId(report.flow_run_id);
     const byId = new Map(report.stages.map((r) => [r.id, r]));
     const runDriven = isRunDriven;
     setStages((all) => all.map((s) => {
@@ -485,6 +487,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
               onRemove={removeStage}
               onSelect={setSelectedId}
               onOpenLab={onOpenLab}
+              flowRunId={flowRunId}
             />
           ) : (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-white p-6 text-center">

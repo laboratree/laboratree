@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import (
     artifacts,
     auth,
+    blobs,
     collection,
     components,
     datasets,
@@ -102,6 +103,7 @@ app.include_router(demo.router)
 app.include_router(flows.router)
 app.include_router(lab_agents.router)
 app.include_router(spiderweb.router)
+app.include_router(blobs.router)
 app.include_router(components.router)
 
 

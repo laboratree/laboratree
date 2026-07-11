@@ -90,7 +90,8 @@ async def _component_phase(
     ctx.state.setdefault("run_ids", {})[component_id] = str(result.run.id)
     return PhaseResult(stage_id=stage_id, status="succeeded", summary=summary,
                        run_id=str(result.run.id), evidence=result.evidence_count,
-                       artifacts={"component_id": component_id})
+                       artifacts={"component_id": component_id,
+                                  "io": (result.run.repro_manifest or {}).get("io", {})})
 
 
 # ----------------------------- understand -----------------------------

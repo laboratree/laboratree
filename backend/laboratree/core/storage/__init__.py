@@ -34,6 +34,19 @@ class LocalBlobStore:
     def get(self, key: str) -> bytes:
         return self._path(key).read_bytes()
 
+    def list(self, prefix: str) -> list[dict]:
+        """Blobs under a prefix: [{key, size, modified}] — the bucket-browse primitive."""
+        base = self._path(prefix.rstrip("/") + "/_probe").parent
+        if not base.exists():
+            return []
+        out: list[dict] = []
+        for path in sorted(base.rglob("*")):
+            if path.is_file():
+                stat = path.stat()
+                out.append({"key": path.relative_to(self.root).as_posix(),
+                            "size": stat.st_size, "modified": stat.st_mtime})
+        return out
+
     def open_write(self, key: str) -> BinaryIO:
         return open(self._path(key), "wb")
 

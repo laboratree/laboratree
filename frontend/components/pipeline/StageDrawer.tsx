@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { labTabLabel, type LabTabKey } from "@/lib/labTabs";
 import { CUSTOM_PHASE, type FlowPhase } from "@/lib/pipelineTemplates";
-import type { ComponentSpecLite } from "@/lib/api";
+import { storageApi, type BucketFile, type ComponentSpecLite } from "@/lib/api";
 import ProvenanceBadge from "@/components/ProvenanceBadge";
 import { KIND_META, stageStatusMeta, type StageState } from "./types";
 
@@ -16,12 +16,14 @@ export type StageDrawerProps = {
   onRemove: (id: string) => void;
   onSelect: (id: string) => void;
   onOpenLab?: (tab: LabTabKey) => void;
+  flowRunId?: string | null;
 };
 
 export default function StageDrawer({
-  stages, phases, selectedId, components, onPatch, onRemove, onSelect, onOpenLab,
+  stages, phases, selectedId, components, onPatch, onRemove, onSelect, onOpenLab, flowRunId,
 }: StageDrawerProps) {
   const [paramsError, setParamsError] = useState<string | null>(null);
+  const [bucketFiles, setBucketFiles] = useState<BucketFile[]>([]);
   const [showAllComponents, setShowAllComponents] = useState(false);
 
   const index = stages.findIndex((s) => s.id === selectedId);
@@ -46,6 +48,16 @@ export default function StageDrawer({
     }
     return [...groups.entries()];
   }, [offered]);
+
+  const stageId = stage?.id;
+  useEffect(() => {
+    if (!flowRunId || !stageId) { setBucketFiles([]); return; }
+    let live = true;
+    storageApi.flowRun(flowRunId)
+      .then((r) => { if (live) setBucketFiles(r.stages[stageId] ?? []); })
+      .catch(() => { if (live) setBucketFiles([]); });
+    return () => { live = false; };
+  }, [flowRunId, stageId]);
 
   if (!stage) return null;
 
@@ -208,6 +220,42 @@ export default function StageDrawer({
           )}
         </div>
       )}
+
+      {(() => {
+        const io = (stage.result?.preview as { io?: { in?: { rows: number; cols: number;
+          columns?: string[] }; out?: { keys?: string[]; dataset?: { rows: number;
+          cols: number } } } } | undefined)?.io;
+        if (!io && bucketFiles.length === 0) return null;
+        return (
+          <div className="mt-3 rounded-lg border border-line bg-bg p-2">
+            <p className="text-[10px] font-bold tracking-wider text-muted">DATA FLOW</p>
+            {io?.in && (
+              <p className="mt-1 text-[11px] text-ink/70">
+                ⬅ in: {io.in.rows}×{io.in.cols}
+                {io.in.columns?.length ? ` (${io.in.columns.slice(0, 6).join(", ")}…)` : ""}
+              </p>
+            )}
+            {io?.out && (
+              <p className="text-[11px] text-ink/70">
+                ➡ out: {io.out.dataset ? `${io.out.dataset.rows}×${io.out.dataset.cols} dataset · ` : ""}
+                {io.out.keys?.join(", ")}
+              </p>
+            )}
+            {bucketFiles.length > 0 && (
+              <div className="mt-1">
+                <p className="text-[10px] text-muted">bucket ({bucketFiles.length} files):</p>
+                {bucketFiles.slice(0, 8).map((f) => (
+                  <a key={f.key} href={storageApi.downloadUrl(f.key)} target="_blank"
+                    rel="noreferrer"
+                    className="block truncate text-[11px] text-[#2563EB] hover:underline">
+                    📄 {f.key.split("/").pop()} ({(f.size / 1024).toFixed(1)}kB)
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="mt-4 flex items-center justify-between border-t border-line pt-2 text-xs">
         {prev ? (

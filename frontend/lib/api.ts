@@ -1353,6 +1353,7 @@ export type FlowRunReport = {
 };
 export type SuperviseReport = {
   thread_id: string;
+  flow_run_id?: string | null;
   status: "paused" | "completed";
   pending_gate: { stage_id: string; gate_id?: string; summary?: string } | null;
   stages: (FlowStageResult & { lab?: string })[];
@@ -1431,6 +1432,14 @@ export const labAgentsApi = {
 export type SpiderMission = {
   id: string; objective: string; status: string; pages: number; items: number; summary: string;
 };
+export type BucketFile = { key: string; size: number; modified: number };
+export const storageApi = {
+  flowRun: (flowRunId: string) =>
+    apiGet<{ stages: Record<string, BucketFile[]>; total_files: number; total_bytes: number }>(
+      `/api/flows/runs/${flowRunId}/storage`),
+  downloadUrl: (key: string) => `/api/blobs/download?key=${encodeURIComponent(key)}`,
+};
+
 export const spiderApi = {
   create: (projectId: string, spec: { objective: string; seed_urls: string[];
            target_schema: Record<string, string>; max_pages?: number; max_depth?: number;
