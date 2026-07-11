@@ -20,7 +20,7 @@ def _enum_col(py_enum, name):
     return Enum(py_enum, name=name, native_enum=False, values_callable=lambda e: [m.value for m in e])
 
 
-class RunStatus(str, enum.Enum):
+class RunStatus(enum.StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     AWAITING_GATE = "awaiting_gate"
@@ -29,14 +29,14 @@ class RunStatus(str, enum.Enum):
     CANCELED = "canceled"
 
 
-class GateStatus(str, enum.Enum):
+class GateStatus(enum.StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
     EDITED = "edited"
 
 
-class IdeationStatus(str, enum.Enum):
+class IdeationStatus(enum.StrEnum):
     COMPLETE = "complete"
     FAILED = "failed"
 
@@ -203,3 +203,63 @@ class LLMCall(PkMixin, TimestampMixin, Base):
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ok")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentRunStatus(enum.StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    GATED = "gated"
+    FAILED = "failed"
+
+
+class AgentRun(PkMixin, OrgScopedMixin, TimestampMixin, Base):
+    """One agent execution (lab agent / deep agent / SpiderWeb mission) — job-style, polled live."""
+
+    __tablename__ = "agent_runs"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    lab: Mapped[str] = mapped_column(String(60), default="")
+    task: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[AgentRunStatus] = mapped_column(
+        _enum_col(AgentRunStatus, "agent_run_status"),
+        default=AgentRunStatus.QUEUED, nullable=False,
+    )
+    steps: Mapped[list] = mapped_column(JSONB, default=list)      # appended live
+    findings: Mapped[list] = mapped_column(JSONB, default=list)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    run_id: Mapped[uuid.UUID | None] = mapped_column(             # the Evidence-locking Run
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
+    )
+    trace_key: Mapped[str] = mapped_column(String(500), default="")
+    llm_calls_used: Mapped[int] = mapped_column(Integer, default=0)
+    frontier: Mapped[dict] = mapped_column(JSONB, default=dict)   # SpiderWeb resumable state
+
+
+class AgentThread(PkMixin, OrgScopedMixin, TimestampMixin, Base):
+    """A persistent chat conversation with one Lab's agent."""
+
+    __tablename__ = "agent_threads"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    lab: Mapped[str] = mapped_column(String(60), default="")
+    messages: Mapped[list] = mapped_column(JSONB, default=list)   # [{role, content, agent_run_id?, ts}]
+
+
+class BlobNote(PkMixin, OrgScopedMixin, TimestampMixin, Base):
+    """Described catalog of stored blobs — agents browse by description, not by loading content."""
+
+    __tablename__ = "blob_notes"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    key: Mapped[str] = mapped_column(String(500), unique=True, index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(40), default="blob")   # trace|page|record|media|...
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    description: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(300), default="")    # e.g. source url

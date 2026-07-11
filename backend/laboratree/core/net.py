@@ -101,4 +101,77 @@ def safe_fetch(
     return None
 
 
-__all__ = ["is_public_http_url", "safe_fetch"]
+# ---------------- HTML → text/links (stdlib; the crawler's reading glasses) ----------------
+
+from html.parser import HTMLParser  # noqa: E402
+from typing import TypedDict  # noqa: E402
+
+_SKIP_TAGS = {"script", "style", "noscript", "svg", "head", "nav", "footer", "iframe"}
+MAX_TEXT_CHARS = 40_000
+
+
+class LinkInfo(TypedDict):
+    id: int
+    text: str
+    href: str
+
+
+class _TextAndLinks(HTMLParser):
+    def __init__(self, base_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.parts: list[str] = []
+        self.links: list[LinkInfo] = []
+        self._skip_depth = 0
+        self._href: str | None = None
+        self._link_text: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _SKIP_TAGS:
+            self._skip_depth += 1
+        elif tag == "a" and self._skip_depth == 0:
+            href = dict(attrs).get("href") or ""
+            self._href = urljoin(self.base_url, href) if href else None
+            self._link_text = []
+        elif tag in ("p", "br", "li", "tr", "h1", "h2", "h3", "h4", "div"):
+            self.parts.append(chr(10))
+
+    def handle_endtag(self, tag):
+        if tag in _SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+        elif tag == "a" and self._href:
+            text = " ".join("".join(self._link_text).split())
+            if text and self._href.startswith(("http://", "https://")):
+                self.links.append(LinkInfo(id=len(self.links), text=text[:120], href=self._href))
+            self._href = None
+
+    def handle_data(self, data):
+        if self._skip_depth:
+            return
+        if self._href is not None:
+            self._link_text.append(data)
+        self.parts.append(data)
+
+
+def _parse_html(body: bytes, base_url: str = "") -> _TextAndLinks:
+    parser = _TextAndLinks(base_url)
+    try:
+        parser.feed(body.decode("utf-8", errors="replace"))
+    except Exception as exc:  # malformed HTML must never break a fetch
+        log.debug("html parse stopped early: %s", exc)
+    return parser
+
+
+def html_to_text(body: bytes) -> str:
+    """Readable text from an HTML body: skip script/style/nav, collapse whitespace, cap size."""
+    raw = "".join(_parse_html(body).parts)
+    lines = [" ".join(line.split()) for line in raw.splitlines()]
+    return chr(10).join(line for line in lines if line)[:MAX_TEXT_CHARS]
+
+
+def extract_links(body: bytes, base_url: str) -> list[LinkInfo]:
+    """Absolute http(s) links with their anchor text (id-stable for agent click-by-id)."""
+    return _parse_html(body, base_url).links
+
+
+__all__ = ["is_public_http_url", "safe_fetch", "html_to_text", "extract_links", "LinkInfo"]

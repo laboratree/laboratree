@@ -12,6 +12,9 @@ EXPECTED_TOOLS = {
     "web_search", "research_search", "arxiv_search", "reddit_search", "open_access_pdf",
     "extract_document", "ocr_pdf", "ocr_image", "profile_dataset", "detect_task",
     "run_component", "sandbox_run",
+    # grounding + data-access additions (agentic platform v2)
+    "fetch_page", "crawl", "component_spec", "knowledge_search", "index_text",
+    "dataset_overview", "query_dataset_sql", "query_cypher", "storage_catalog", "read_blob",
 }
 
 

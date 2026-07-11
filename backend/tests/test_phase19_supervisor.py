@@ -18,6 +18,8 @@ DEEP_FINISH = json.dumps({
     "findings": [{"claim": "India edtech market estimated at $4-6B",
                   "basis": "web_search results (steps 1)"}],
 })
+# deep-agent v2 runs a critic audit after converging — script it as "all supported"
+DEEP_CRITIC_OK = json.dumps({"verdicts": [{"index": 0, "supported": True}]})
 
 
 @pytest.fixture(autouse=True)
@@ -104,7 +106,7 @@ def test_deep_agent_fills_uncovered_stage_with_tools(monkeypatch):
     monkeypatch.setattr(settings, "llm_provider", "openai")
     monkeypatch.setattr(settings, "openai_api_key", "test-key")
 
-    scripted = iter([DEEP_STEP_1, DEEP_FINISH])
+    scripted = iter([DEEP_STEP_1, DEEP_FINISH, DEEP_CRITIC_OK])
     prompts: list[str] = []
 
     def _fake(system: str, prompt: str, **kw) -> str:
@@ -151,7 +153,7 @@ def test_market_research_flow_mixes_deep_agent_and_components(monkeypatch):
 
     monkeypatch.setattr(settings, "llm_provider", "openai")
     monkeypatch.setattr(settings, "openai_api_key", "test-key")
-    scripted = iter([DEEP_STEP_1, DEEP_FINISH])
+    scripted = iter([DEEP_STEP_1, DEEP_FINISH, DEEP_CRITIC_OK])
     monkeypatch.setattr(agentic_llm, "default_complete",
                         lambda s, p, **kw: next(scripted))
     import laboratree.core.search as search_mod

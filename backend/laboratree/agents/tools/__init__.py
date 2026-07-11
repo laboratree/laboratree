@@ -115,6 +115,69 @@ def _sandbox_run(code: str, **kw: Any) -> Any:
     return run_code(code, **kw)
 
 
+def _fetch_page(url: str) -> dict[str, Any]:
+    """SSRF-guarded fetch → readable text + link inventory (HTML) or a routing note."""
+    from ...core.net import extract_links, html_to_text, safe_fetch
+
+    body = safe_fetch(url)
+    if body is None:
+        return {"error": "fetch blocked or failed (SSRF guard / size cap / network)"}
+    head = body[:256].lstrip()
+    if head.startswith(b"%PDF"):
+        return {"note": "PDF content — use extract_document or open_access_pdf instead",
+                "bytes": len(body)}
+    text = html_to_text(body)
+    links = extract_links(body, url)[:40]
+    return {"url": url, "text": text[:6000], "links": links}
+
+
+def _crawl(url: str, objective: str, max_pages: int = 5, max_depth: int = 2) -> dict[str, Any]:
+    """Context-aware static crawl: follow only objective-relevant same-domain links."""
+    import time as _time
+    from urllib.parse import urlsplit
+
+    from ...core.net import extract_links, html_to_text, safe_fetch
+
+    terms = {t for t in objective.lower().split() if len(t) > 3}
+    seed_host = urlsplit(url).netloc.split(":")[0]
+    queue: list[tuple[str, int]] = [(url, 0)]
+    seen: set[str] = set()
+    pages: list[dict[str, Any]] = []
+    while queue and len(pages) < max_pages:
+        current, depth = queue.pop(0)
+        canonical = current.split("#")[0]
+        if canonical in seen or urlsplit(canonical).netloc.split(":")[0] != seed_host:
+            continue
+        seen.add(canonical)
+        body = safe_fetch(canonical)
+        if body is None:
+            continue
+        text = html_to_text(body)
+        relevant = [line for line in text.splitlines()
+                    if any(t in line.lower() for t in terms)] or text.splitlines()[:10]
+        pages.append({"url": canonical, "excerpt": "\n".join(relevant)[:2000]})
+        if depth < max_depth:
+            links = extract_links(body, canonical)
+            scored = sorted(
+                links, key=lambda li: -sum(t in (li["text"] + li["href"]).lower()
+                                           for t in terms))
+            queue.extend((li["href"], depth + 1) for li in scored[:5])
+        _time.sleep(0.3)  # politeness between same-domain fetches
+    return {"objective": objective, "pages": pages, "visited": len(seen)}
+
+
+def _component_spec(component_id: str) -> dict[str, Any]:
+    """Inspect a component's contract BEFORE calling it (component-aware agents)."""
+    from ...core.registry import REGISTRY
+
+    try:
+        spec = REGISTRY.get(component_id).spec
+    except Exception:
+        return {"error": f"unknown component: {component_id}"}
+    return {"id": spec.id, "summary": spec.summary, "params_schema": spec.params_schema,
+            "inputs": [p.name for p in spec.inputs], "outputs": [p.name for p in spec.outputs]}
+
+
 TOOLBELT: dict[str, AgentTool] = {
     tool.name: tool
     for tool in (
@@ -147,8 +210,57 @@ TOOLBELT: dict[str, AgentTool] = {
                   '{"component_id": str, "params": dict}', lambda: None),  # bound per-run
         AgentTool("sandbox_run", "Run Python in the no-network Docker sandbox.",
                   '{"code": str}', _sandbox_run, _sandbox_ok),
+        AgentTool("fetch_page", "Fetch ONE page (SSRF-guarded): readable text + link inventory.",
+                  '{"url": str}', _fetch_page),
+        AgentTool("crawl",
+                  "Context-aware crawl from a seed URL: follows only objective-relevant "
+                  "same-domain links; returns per-page relevant excerpts.",
+                  '{"url": str, "objective": str, "max_pages"?: int, "max_depth"?: int}', _crawl),
+        AgentTool("component_spec",
+                  "Inspect a registered component's params schema + ports BEFORE calling it.",
+                  '{"component_id": str}', _component_spec),
+        # ---- context-bound tools (need session/org/project — dispatched by the runner) ----
+        AgentTool("knowledge_search",
+                  "Hybrid semantic+lexical search over this project's knowledge corpus "
+                  "(papers + indexed research). Cite what you use.",
+                  '{"query": str, "k"?: int}', lambda: None),
+        AgentTool("index_text",
+                  "Add researched text to the project's retrievable corpus (deduped by source).",
+                  '{"title": str, "text": str, "source_url"?: str}', lambda: None),
+        AgentTool("dataset_overview",
+                  "Schema of the working dataset: columns, dtypes, n_rows (pick REAL column "
+                  "names before running components).", "{}", lambda: None),
+        AgentTool("query_dataset_sql",
+                  "SELECT-only SQL over this project's datasets (in-memory engine; table name "
+                  "= 'data' for the working dataset).",
+                  '{"sql": str}', lambda: None),
+        AgentTool("query_cypher",
+                  "READ-ONLY Cypher over the org's graph (personas/stakeholders); write "
+                  "clauses rejected.", '{"cypher": str}', lambda: None),
+        AgentTool("storage_catalog",
+                  "Browse stored blobs by DESCRIPTION (cheap — no content loaded).",
+                  '{"prefix"?: str}', lambda: None),
+        AgentTool("read_blob",
+                  "Read a stored blob: excerpt mode returns description + first 1200 chars.",
+                  '{"key": str, "mode"?: "excerpt"|"full"}', lambda: None),
     )
 }
+
+# tools the runner must dispatch with FlowContext (session/org/project/state)
+CONTEXT_BOUND_TOOLS = frozenset({
+    "knowledge_search", "index_text", "dataset_overview", "query_dataset_sql",
+    "query_cypher", "storage_catalog", "read_blob",
+})
+
+
+async def call_context_tool(ctx: Any, name: str, args: dict[str, Any]) -> Any:
+    """Execute a context-bound tool against the caller's FlowContext (org-scoped by design)."""
+    from . import context_tools
+
+    handler = getattr(context_tools, f"tool_{name}", None)
+    if handler is None:
+        return {"error": f"context tool not implemented: {name}"}
+    return await handler(ctx, **args)
 
 
 def available_tools(catalog: dict[str, AgentTool] | None = None) -> dict[str, AgentTool]:
@@ -169,4 +281,5 @@ def toolbelt_prompt(tools: dict[str, AgentTool] | None = None) -> str:
     return "\n".join(f"- {t.name}: {t.description} args={t.params_hint}" for t in chosen)
 
 
-__all__ = ["AgentTool", "TOOLBELT", "available_tools", "toolbelt_prompt"]
+__all__ = ["AgentTool", "TOOLBELT", "CONTEXT_BOUND_TOOLS", "available_tools",
+           "toolbelt_prompt", "call_context_tool"]

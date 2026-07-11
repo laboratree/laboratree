@@ -21,6 +21,7 @@ from .api import (
     gates,
     health,
     ideation,
+    lab_agents,
     media,
     observability,
     orgs,
@@ -98,6 +99,7 @@ app.include_router(deliverables.router)
 app.include_router(deliverables.public_router)
 app.include_router(demo.router)
 app.include_router(flows.router)
+app.include_router(lab_agents.router)
 app.include_router(components.router)
 
 
