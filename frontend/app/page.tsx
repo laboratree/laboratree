@@ -56,23 +56,29 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl text-forest">Projects</h1>
-          <p className="mt-1 text-muted">Each project is a research workspace.</p>
+          <p className="mt-1 text-muted">
+            Each project is a full research workspace — evidence, labs, and reports in one place.
+          </p>
         </div>
-        <form onSubmit={create} className="flex gap-2">
+        <form
+          onSubmit={create}
+          className="flex overflow-hidden rounded-full border border-line bg-white shadow-sm focus-within:border-leaf"
+        >
           <input
-            className="rounded-lg border border-line px-3 py-2 outline-none focus:border-leaf"
-            placeholder="New project name"
+            className="w-56 bg-transparent px-4 py-2 text-sm outline-none"
+            placeholder="Name a new project…"
+            aria-label="New project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <button
-            disabled={busy}
-            className="rounded-lg bg-leaf px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
+            disabled={busy || !name.trim()}
+            className="bg-leaf px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           >
-            Create
+            {busy ? "Creating…" : "Create"}
           </button>
         </form>
       </div>
@@ -82,15 +88,18 @@ export default function Dashboard() {
         {projects.map((p) => (
           <div
             key={p.id}
-            className="group relative rounded-2xl border border-line bg-white p-5 transition hover:border-leaf"
+            className="group relative rounded-2xl border border-line bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-leaf hover:shadow-md"
           >
             <Link href={`/projects/${p.id}`} className="block">
-              <h3 className="pr-8 font-medium text-forest">{p.name}</h3>
+              <h3 className="pr-8 font-display text-lg text-forest">{p.name}</h3>
               <p className="mt-1 line-clamp-2 text-sm text-muted">
-                {p.description || "Open workspace →"}
+                {p.description || "Raw inputs → evidence → models → decisions → report."}
               </p>
-              <p className="mt-3 text-xs text-muted">
-                {new Date(p.created_at).toLocaleDateString()}
+              <p className="mt-4 flex items-center justify-between text-xs text-muted">
+                <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                <span className="font-semibold text-leaf opacity-0 transition group-hover:opacity-100">
+                  Open workspace →
+                </span>
               </p>
             </Link>
             {canDelete && (
@@ -109,7 +118,14 @@ export default function Dashboard() {
           </div>
         ))}
         {projects.length === 0 && (
-          <p className="text-muted">No projects yet — create one to get started.</p>
+          <div className="col-span-full flex h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-leaf/40 bg-[#F7FAF5] text-center">
+            <span className="text-4xl">🌱</span>
+            <p className="mt-3 font-display text-lg text-forest">Plant your first project</p>
+            <p className="mt-1 max-w-sm text-sm text-muted">
+              Name it above and press Create — you&apos;ll get a workspace with every lab, from
+              problem intake to the final report.
+            </p>
+          </div>
         )}
       </div>
 

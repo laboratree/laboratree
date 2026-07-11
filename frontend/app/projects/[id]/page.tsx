@@ -6,11 +6,16 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Api, openBlob, type Project } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth";
-import { LAB_TABS, type LabTabKey } from "@/lib/labTabs";
+import { LAB_TAB_GROUPS, labTabLabel, labTabShort, type LabTabKey } from "@/lib/labTabs";
 
 // Each Lab is loaded on demand (only when its tab is opened) so the project page opens fast and
 // heavy deps (React Flow, vega, papaparse) aren't pulled into the initial route bundle.
-const TabLoading = () => <p className="text-sm text-muted">Loading Lab…</p>;
+const TabLoading = () => (
+  <div className="space-y-3" role="status" aria-label="Loading lab">
+    <div className="h-24 animate-shimmer rounded-2xl" />
+    <div className="h-64 animate-shimmer rounded-2xl" />
+  </div>
+);
 const dyn = (loader: () => Promise<{ default: React.ComponentType<{ projectId: string }> }>) =>
   dynamic(loader, { ssr: false, loading: TabLoading });
 
@@ -67,43 +72,94 @@ export default function ProjectWorkspace() {
   if (loading || !user) return <p className="text-muted">Loading…</p>;
   if (error) return <p className="text-red-600">{error}</p>;
 
+  const activeGroup = LAB_TAB_GROUPS.find((g) => g.tabs.includes(tab));
+
   return (
     <div>
-      <Link href="/" className="text-sm text-muted hover:text-forest">
-        ← Projects
-      </Link>
-      <div className="mt-2 flex items-center justify-between">
-        <h1 className="font-display text-3xl text-forest">{project?.name ?? "…"}</h1>
+      <nav aria-label="Breadcrumb" className="text-sm text-muted">
+        <Link href="/" className="hover:text-forest">Projects</Link>
+        <span className="mx-1.5 text-line">/</span>
+        <span className="text-forest">{project?.name ?? "…"}</span>
+      </nav>
+      <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl text-forest">{project?.name ?? "…"}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {activeGroup ? (
+              <>
+                <span style={{ color: activeGroup.accent }}>◆</span>{" "}
+                {activeGroup.title} · {labTabLabel(tab)}
+              </>
+            ) : (
+              "Research workspace"
+            )}
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           {trustScore !== null && (
-            <span className="rounded-full bg-leaf/15 px-3 py-1 text-sm text-forest">
-              trust {trustScore}/100
+            <span
+              className="rounded-full bg-leaf/15 px-3 py-1.5 text-sm font-semibold text-forest"
+              title="Trust score from the latest report — provenance, reproducibility and leakage checks"
+            >
+              🔒 trust {trustScore}/100
             </span>
           )}
           <button
             onClick={makeReport}
             disabled={reportBusy}
-            className="rounded-lg bg-forest px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded-full bg-forest px-5 py-2 text-sm font-semibold text-white shadow-[0_2px_10px_rgba(20,52,42,0.25)] transition hover:-translate-y-px hover:opacity-90 disabled:opacity-50 disabled:shadow-none"
           >
-            {reportBusy ? "Building…" : "Report card"}
+            {reportBusy ? "Building report…" : "Report card"}
           </button>
         </div>
       </div>
 
-      <div className="mt-6 flex gap-2 border-b border-line">
-        {LAB_TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
-              tab === t.key
-                ? "border-leaf text-forest"
-                : "border-transparent text-muted hover:text-forest"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="relative mt-6">
+        <nav
+          aria-label="Labs by lifecycle phase"
+          className="no-scrollbar overflow-x-auto rounded-2xl border border-line bg-white px-4 py-3"
+        >
+          <div className="flex min-w-max items-stretch gap-3">
+            {LAB_TAB_GROUPS.map((group, gi) => (
+              <div key={group.key} className="flex items-stretch gap-3">
+                {gi > 0 && <span className="w-px self-stretch bg-line" />}
+                <div>
+                  <div
+                    className="text-[9px] font-extrabold uppercase tracking-[0.14em]"
+                    style={{ color: group.accent }}
+                  >
+                    ◆ {group.title}
+                  </div>
+                  <div className="mt-1.5 flex gap-0.5">
+                    {group.tabs.map((key) => {
+                      const active = tab === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setTab(key)}
+                          title={labTabLabel(key)}
+                          aria-current={active ? "page" : undefined}
+                          className={`whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                            active
+                              ? "bg-forest text-white shadow-sm"
+                              : "text-muted hover:bg-bg hover:text-forest"
+                          }`}
+                          style={active ? { boxShadow: `inset 0 2px 0 ${group.accent}` } : undefined}
+                        >
+                          {labTabShort(key)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </nav>
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-1 right-1 w-8 rounded-r-2xl bg-gradient-to-l from-white to-transparent xl:hidden"
+        />
       </div>
 
       <div className="mt-6">

@@ -10,6 +10,48 @@
 body {
   background-color: #fbfdf9;
   color: #1e2a22;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(168, 208, 141, 0.45); /* sprout */
+  color: #14342a;
+}
+
+/* Visible, on-brand keyboard focus everywhere */
+:focus-visible {
+  outline: 2px solid #6db33f;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Horizontal rows (lifecycle nav) scroll without a visible scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Quiet shimmer for lab loading states */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, #eef3ea 25%, #f7faf5 50%, #eef3ea 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-stage-pulse,
+  .animate-drawer-in {
+    animation: none;
+  }
 }
 
 /* Pipeline canvas motion — used by components/pipeline */
