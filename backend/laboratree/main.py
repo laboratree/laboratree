@@ -35,6 +35,7 @@ from .api import (
     reports,
     runs,
     signal,
+    spiderweb,
     surveys,
 )
 from .core.config import settings
@@ -100,6 +101,7 @@ app.include_router(deliverables.public_router)
 app.include_router(demo.router)
 app.include_router(flows.router)
 app.include_router(lab_agents.router)
+app.include_router(spiderweb.router)
 app.include_router(components.router)
 
 

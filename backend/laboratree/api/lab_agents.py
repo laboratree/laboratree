@@ -88,6 +88,8 @@ async def get_agent_run(
         "trace_key": agent_run.trace_key,
         "llm_calls": agent_run.llm_calls_used,
         "tokens": int(tokens or 0), "cost_usd": float(cost or 0.0),
+        # SpiderWeb missions carry their collected records in the frontier
+        "records": (agent_run.frontier or {}).get("records", [])[:200],
     }
 
 

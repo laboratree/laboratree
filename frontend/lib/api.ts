@@ -1381,7 +1381,11 @@ export type FlowOp = {
   params?: Record<string, unknown>;
 };
 export type AgentStep = {
-  kind?: "plan" | "todo" | "tool" | "critic";
+  kind?: "plan" | "todo" | "tool" | "critic" | "page" | "note";
+  url?: string;
+  matched?: boolean;
+  skipped?: string;
+  depth?: number;
   step?: number;
   id?: number;
   status?: string;
@@ -1407,6 +1411,7 @@ export type AgentRunView = {
   llm_calls: number;
   tokens: number;
   cost_usd: number;
+  records?: Record<string, unknown>[];
 };
 export type ChatMessageView = { role: "user" | "agent"; content: string; agent_run_id?: string };
 export const labAgentsApi = {
@@ -1420,6 +1425,22 @@ export const labAgentsApi = {
   threads: (projectId: string, lab: string) =>
     apiGet<{ id: string; messages: unknown[]; updated_at: string }[]>(
       `/api/projects/${projectId}/labs/${lab}/threads`),
+};
+
+// ---------------- SpiderWeb ----------------
+export type SpiderMission = {
+  id: string; objective: string; status: string; pages: number; items: number; summary: string;
+};
+export const spiderApi = {
+  create: (projectId: string, spec: { objective: string; seed_urls: string[];
+           target_schema: Record<string, string>; max_pages?: number; max_depth?: number;
+           allow_domains?: string[] }) =>
+    apiPost<{ agent_run_id: string }>(`/api/projects/${projectId}/spiderweb/missions`, spec),
+  list: (projectId: string) =>
+    apiGet<SpiderMission[]>(`/api/projects/${projectId}/spiderweb/missions`),
+  resume: (projectId: string, missionId: string) =>
+    apiPost<{ agent_run_id: string; status: string }>(
+      `/api/projects/${projectId}/spiderweb/missions/${missionId}/resume`),
 };
 
 // ---------------- Persona Lab ----------------
