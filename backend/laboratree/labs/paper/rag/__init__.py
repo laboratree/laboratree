@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from collections.abc import Callable
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from ....papers.models import PaperChunk
 
 log = logging.getLogger(__name__)
 
 CompleteFn = Callable[[str, str], str]
 EmbedFn = Callable[[list[str]], list[list[float]]]
-
-_TOKEN = re.compile(r"[a-z0-9]{3,}")
 
 _SYSTEM = (
     "You answer questions about a research paper using ONLY the provided context passages. "
@@ -35,37 +29,12 @@ async def retrieve(
     embed_fn: EmbedFn | None = None,
     k: int = 4,
 ) -> list[dict]:
-    base = select(PaperChunk).where(
-        PaperChunk.paper_id == paper_id, PaperChunk.org_id == org_id
-    )
+    """Single-paper retrieval — delegates to the shared hybrid engine (dense + FTS + RRF)."""
+    from ....core.retrieval import hybrid_search  # local import avoids a labs<->core cycle
 
-    # Vector path: only if we can embed AND at least one chunk has an embedding.
-    if embed_fn is not None:
-        try:
-            qv = embed_fn([query])[0]
-            rows = (
-                await session.execute(
-                    base.where(PaperChunk.embedding.isnot(None))
-                    .order_by(PaperChunk.embedding.cosine_distance(qv))
-                    .limit(k)
-                )
-            ).scalars().all()
-            if rows:
-                return [{"ordinal": c.ordinal, "text": c.text} for c in rows]
-        except Exception as exc:
-            log.info("vector retrieval failed; falling back to keyword search: %s", exc)
-
-    # Keyword fallback (deterministic, no model needed).
-    chunks = (await session.execute(base.order_by(PaperChunk.ordinal))).scalars().all()
-    terms = set(_TOKEN.findall(query.lower()))
-    scored = []
-    for c in chunks:
-        text_l = c.text.lower()
-        score = sum(text_l.count(t) for t in terms)
-        scored.append((score, c.ordinal, c.text))
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    top = [s for s in scored if s[0] > 0][:k] or scored[:k]
-    return [{"ordinal": o, "text": t} for _, o, t in top]
+    chunks = await hybrid_search(session, org_id=org_id, paper_id=paper_id,
+                                 query=query, k=k, embed_fn=embed_fn)
+    return [{"ordinal": c.ordinal, "text": c.text} for c in chunks]
 
 
 def answer(question: str, passages: list[dict], complete_fn: CompleteFn) -> dict:
