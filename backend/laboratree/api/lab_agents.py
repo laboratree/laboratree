@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -11,10 +12,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from ..agents.lab_agent import LAB_AGENTS, chat_turn, execute_agent_run, list_threads
+from ..core.config import settings
 from ..core.db.postgres import sessionmaker
 from ..core.deps import Principal, SessionDep, require_role
 from ..core.ratelimit import rate_limited
-from ..projects.models import AgentRun, LLMCall, Project
+from ..projects.models import AgentRun, AgentRunStatus, LLMCall, Project
 from ..tenancy.models import Role
 
 log = logging.getLogger(__name__)
@@ -38,6 +40,22 @@ async def _run_agent_job(agent_run_id: uuid.UUID) -> None:
     """Background body — its own session (the request's session is closed by then)."""
     async with sessionmaker()() as session:
         await execute_agent_run(session, agent_run_id)
+
+
+async def _reap_if_stale(session, agent_run: AgentRun) -> None:
+    """Stale-run janitor: RUNNING with no update past the threshold → the host restarted
+    mid-run. Mark it failed honestly instead of showing a spinner forever (SpiderWeb missions
+    keep their frontier, so Resume still works)."""
+    if agent_run.status not in (AgentRunStatus.RUNNING, AgentRunStatus.QUEUED):
+        return
+    age_s = (datetime.now(UTC) - agent_run.updated_at).total_seconds()
+    if age_s <= settings.agent_stale_after_s:
+        return
+    agent_run.status = AgentRunStatus.FAILED
+    agent_run.summary = (agent_run.summary
+                         or "run went stale (host restarted?) — resume or re-ask in the thread")
+    await session.commit()
+    log.warning("reaped stale agent run %s (idle %.0fs)", agent_run.id, age_s)
 
 
 @router.post("/projects/{project_id}/labs/{lab}/chat",
@@ -75,6 +93,7 @@ async def get_agent_run(
     if (agent_run is None or agent_run.org_id != principal.org_id
             or agent_run.project_id != project_id):
         raise HTTPException(status_code=404, detail="unknown agent run")
+    await _reap_if_stale(session, agent_run)
     tokens, cost = (await session.execute(
         select(func.coalesce(func.sum(LLMCall.total_tokens), 0),
                func.coalesce(func.sum(LLMCall.cost_usd), 0.0))

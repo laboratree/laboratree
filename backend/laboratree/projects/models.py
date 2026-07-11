@@ -238,6 +238,36 @@ class AgentRun(PkMixin, OrgScopedMixin, TimestampMixin, Base):
     frontier: Mapped[dict] = mapped_column(JSONB, default=dict)   # SpiderWeb resumable state
 
 
+class ExperienceOutcome(enum.StrEnum):
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class AgentExperience(PkMixin, OrgScopedMixin, TimestampMixin, Base):
+    """Long-term strategy memory — what a goal needed last time, so future runs plan better.
+
+    "Self-improving" v1 = recorded experience + recall-informed planning + reflection lessons
+    (strategy learning), NOT model-weight updates.
+    """
+
+    __tablename__ = "agent_experiences"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    goal_kind: Mapped[str] = mapped_column(String(40), default="", index=True)
+    goal_text: Mapped[str] = mapped_column(Text, default="")
+    plan: Mapped[list] = mapped_column(JSONB, default=list)       # [{objective, agent_type}]
+    outcome: Mapped[ExperienceOutcome] = mapped_column(
+        _enum_col(ExperienceOutcome, "experience_outcome"),
+        default=ExperienceOutcome.SUCCEEDED, nullable=False,
+    )
+    score: Mapped[float] = mapped_column(Float, default=0.0)      # surviving-findings ratio
+    lessons: Mapped[list] = mapped_column(JSONB, default=list)    # ≤3 short strings
+    refined: Mapped[bool] = mapped_column(Boolean, default=False)  # needed a revision round?
+
+
 class AgentThread(PkMixin, OrgScopedMixin, TimestampMixin, Base):
     """A persistent chat conversation with one Lab's agent."""
 

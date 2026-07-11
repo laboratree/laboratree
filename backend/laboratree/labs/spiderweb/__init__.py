@@ -225,6 +225,24 @@ async def _finish(session, agent_run, spec, records, visited, extract_enabled) -
     agent_run.findings = [*findings,
                           *([{"claim": f"dataset:{dataset_id}"}] if dataset_id else [])]
     agent_run.status = AgentRunStatus.SUCCEEDED
+
+    # missions feed the Experience DB too: future web goals start from what worked here
+    try:
+        from ...agents.cognitive import Goal, record_experience
+        from ...projects.models import ExperienceOutcome
+
+        await record_experience(
+            session, org_id=agent_run.org_id, project_id=agent_run.project_id,
+            goal=Goal(text=spec.objective, intent=spec.objective[:300], kind="web"),
+            plan=[{"objective": spec.objective[:200], "agent_type": "research"}],
+            outcome=(ExperienceOutcome.SUCCEEDED if records or not extract_enabled
+                     else ExperienceOutcome.PARTIAL),
+            score=min(1.0, len(records) / max(1, spec.max_pages)),
+            lessons=[f"seeds {[str(u) for u in spec.seed_urls[:2]]} yielded "
+                     f"{len(records)} records over {len(visited)} pages"])
+    except Exception as exc:  # strategy memory must never fail the mission
+        log.info("mission experience record failed: %s", exc)
+
     await session.commit()
 
 

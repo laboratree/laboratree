@@ -1382,7 +1382,7 @@ export type FlowOp = {
   params?: Record<string, unknown>;
 };
 export type AgentStep = {
-  kind?: "plan" | "todo" | "tool" | "critic" | "page" | "note";
+  kind?: "plan" | "todo" | "tool" | "critic" | "page" | "note" | "recall" | "refine" | "budget";
   url?: string;
   matched?: boolean;
   skipped?: string;
@@ -1397,7 +1397,15 @@ export type AgentStep = {
   args?: string;
   observation?: string;
   dropped?: number;
-  todos?: { id: number; objective: string; status: string }[];
+  todos?: { id: number; objective: string; status: string; agent_type?: string }[];
+  // cognitive loop (Slice F)
+  agent_type?: string;
+  count?: number;
+  lessons?: string[];
+  tasks?: { id: number; objective: string; agent_type?: string }[];
+  reason?: string;
+  tokens?: number;
+  note?: string;
 };
 export type AgentRunView = {
   id: string;

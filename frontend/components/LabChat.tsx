@@ -33,8 +33,36 @@ function StepLine({ step }: { step: AgentStep }) {
     const icon = step.status === "done" ? "✅" : step.status === "running" ? "⏳" : "🔲";
     return (
       <div className="mt-1 text-[11px] text-ink/70">
-        {icon} {step.objective ?? step.summary ?? `task ${step.id}`}
+        {icon} {step.agent_type ? `[${step.agent_type}] ` : ""}
+        {step.objective ?? step.summary ?? `task ${step.id}`}
         {step.status === "done" && step.summary ? ` — ${step.summary}` : ""}
+      </div>
+    );
+  }
+  if (step.kind === "recall") {
+    return (
+      <div
+        className="mt-1 rounded-lg bg-[#EAF5FF] p-2 text-[11px] text-[#1D4ED8]"
+        title={(step.lessons ?? []).join("\n")}
+      >
+        🧠 using {step.count} lesson{step.count === 1 ? "" : "s"} from past runs
+      </div>
+    );
+  }
+  if (step.kind === "refine") {
+    return (
+      <div className="mt-1 rounded-lg bg-[#FFF4E5] p-2 text-[11px] text-[#B45309]">
+        🔁 self-correcting: re-planning the unmet parts
+        {(step.tasks ?? []).length
+          ? ` — ${(step.tasks ?? []).map((t) => t.objective).join(" · ")}`
+          : ""}
+      </div>
+    );
+  }
+  if (step.kind === "budget") {
+    return (
+      <div className="mt-1 text-[11px] text-red-700">
+        ⛔ {step.note ?? "budget exhausted — stopped honestly"}
       </div>
     );
   }

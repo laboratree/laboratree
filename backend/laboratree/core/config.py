@@ -117,6 +117,10 @@ class Settings(BaseSettings):
     evidence_cache_ttl_s: int = 30             # evidence picker (short — new runs must appear)
     search_cache_ttl_s: int = 3600             # search-provider memo (dedupes agent loops)
 
+    # --- Agent run hygiene (cognitive architecture) ---
+    agent_token_budget: int = 60000            # total tokens per agent run; overrun → honest stop
+    agent_stale_after_s: int = 600             # RUNNING with no update this long → host restarted
+
     # --- LLM observability ---
     llm_tracing: bool = True
     llm_price_per_1k: float | None = None      # optional cost estimate = tokens/1000 * this

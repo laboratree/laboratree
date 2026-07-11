@@ -20,6 +20,12 @@ DEEP_FINISH = json.dumps({
 })
 # deep-agent v2 runs a critic audit after converging — script it as "all supported"
 DEEP_CRITIC_OK = json.dumps({"verdicts": [{"index": 0, "supported": True}]})
+# broad objectives engage the cognitive loop: goal interpretation + meta-plan up front,
+# reflection at the end (narrow objectives skip all three — cost law)
+DEEP_GOAL = json.dumps({"intent": "size the market", "deliverable": "sizing brief"})
+DEEP_PLAN_ONE = json.dumps({"tasks": [{"objective": "size the market from credible sources",
+                                       "agent_type": "research", "tools": ["web_search"]}]})
+DEEP_REFLECT = json.dumps({"worked": ["triangulation"], "failed": [], "lessons": []})
 
 
 @pytest.fixture(autouse=True)
@@ -153,7 +159,8 @@ def test_market_research_flow_mixes_deep_agent_and_components(monkeypatch):
 
     monkeypatch.setattr(settings, "llm_provider", "openai")
     monkeypatch.setattr(settings, "openai_api_key", "test-key")
-    scripted = iter([DEEP_STEP_1, DEEP_FINISH, DEEP_CRITIC_OK])
+    scripted = iter([DEEP_GOAL, DEEP_PLAN_ONE, DEEP_STEP_1, DEEP_FINISH,
+                     DEEP_CRITIC_OK, DEEP_REFLECT])
     monkeypatch.setattr(agentic_llm, "default_complete",
                         lambda s, p, **kw: next(scripted))
     import laboratree.core.search as search_mod

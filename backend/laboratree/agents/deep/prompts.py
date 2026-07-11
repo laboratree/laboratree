@@ -40,17 +40,6 @@ def react_turn(objective: str, scratchpad: list[dict[str, Any]], *, context_note
     return f"OBJECTIVE:\n{objective}\n{note}\nSCRATCHPAD:\n{history}\n\nNext JSON:"
 
 
-def plan_system(tool_catalog: str) -> str:
-    return (
-        "You are the meta-planner of a research platform. Decompose the objective into 2-5 "
-        "small, delegable tasks for tool-using sub-agents.\n\n"
-        f"AVAILABLE TOOLS:\n{tool_catalog}\n\n"
-        'Respond ONLY as JSON: {"tasks": [{"objective": "<one focused sub-goal>", '
-        '"tools": ["<tool names best suited>"]}]}. Order tasks so later ones can build on '
-        "earlier results. Do not invent tools."
-    )
-
-
 def critic_system() -> str:
     return (
         "You audit agent findings against the recorded observations. A finding SURVIVES only "
