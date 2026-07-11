@@ -1,6 +1,8 @@
 """SpiderWeb — the agentic web navigator: delegate a dig, get a Dataset back.
 
-A mission = objective + seed URLs + a target schema. The navigator walks pages with the
+A mission = an objective, optionally seed URLs and a target schema. With no seeds the agent
+discovers its own starting points through the search belt (web/research/reddit — see
+``discover``); with no schema it runs a snapshot crawl. The navigator walks pages with the
 browser engine (Playwright when installed, guarded static fetch otherwise), scores links
 against the objective, extracts one record per matching page, and lands everything platform-
 native: a versioned Dataset (source_url per row), page snapshots catalogued with descriptions
@@ -34,6 +36,7 @@ from ...core.storage import get_blob_store
 from ...labs.agentic import llm as agentic_llm
 from ...projects.models import AgentRun, AgentRunStatus
 from . import robots
+from .discover import discover_seeds
 from .extract import extract_record
 
 log = logging.getLogger(__name__)
@@ -46,7 +49,8 @@ _TRACKING_PARAMS = ("utm_", "fbclid", "gclid", "ref", "mc_cid", "mc_eid")
 
 class MissionSpec(BaseModel):
     objective: str = Field(min_length=3, max_length=1000)
-    seed_urls: list[str] = Field(min_length=1, max_length=10)
+    # optional: no seeds → the agent discovers them via web/research/reddit search
+    seed_urls: list[str] = Field(default_factory=list, max_length=10)
     target_schema: dict[str, str] = Field(default_factory=dict)   # {} = snapshot-only mode
     max_pages: int = Field(default=50, ge=1, le=200)
     max_depth: int = Field(default=3, ge=1, le=5)
@@ -94,12 +98,31 @@ async def run_mission(
     visited: list[str] = list(stored.get("visited") or [])
     records: list[dict] = [dict(r) for r in stored.get("records") or []]
     record_hashes: set[str] = set(stored.get("record_hashes") or [])
-    frontier: dict[str, Any] = {"spec": stored["spec"]}
-    seed_domains = {_domain(u) for u in spec.seed_urls}
-    extract_enabled = bool(spec.target_schema) and agentic_llm.is_configured()
+    seeds: list[str] = list(stored.get("seeds") or spec.seed_urls)
 
     agent_run.status = AgentRunStatus.RUNNING
     await session.commit()
+
+    # no seeds given → the agent finds its own via the search belt (web/research/reddit)
+    if not seeds and not queue and not visited:
+        seeds = await asyncio.to_thread(discover_seeds, spec.objective)
+        if not seeds:
+            agent_run.status = AgentRunStatus.FAILED
+            agent_run.summary = ("no seed URLs and no search provider configured — add seed "
+                                 "URLs or set a web-search key so the agent can find its own")
+            await session.commit()
+            return
+        queue = [[canonical(u), 0] for u in seeds]
+        agent_run.steps = [*agent_run.steps,
+                           {"kind": "note",
+                            "note": f"discovered {len(seeds)} seed(s) via "
+                                    "web/research/reddit search",
+                            "seeds": seeds}]
+        await session.commit()
+
+    frontier: dict[str, Any] = {"spec": stored["spec"], "seeds": seeds}
+    seed_domains = {_domain(u) for u in seeds}
+    extract_enabled = bool(spec.target_schema) and agentic_llm.is_configured()
 
     engine = browser or get_browser()
     started = time.monotonic()
@@ -166,7 +189,7 @@ async def run_mission(
         except Exception:
             pass
 
-    await _finish(session, agent_run, spec, records, visited, extract_enabled)
+    await _finish(session, agent_run, spec, seeds, records, visited, extract_enabled)
 
 
 async def _persist(session, agent_run, frontier, queue, visited, records, record_hashes):
@@ -191,7 +214,7 @@ async def _snapshot(session, agent_run, url, text, record, spec) -> None:
         log.debug("snapshot failed for %s: %s", url, exc)
 
 
-async def _finish(session, agent_run, spec, records, visited, extract_enabled) -> None:
+async def _finish(session, agent_run, spec, seeds, records, visited, extract_enabled) -> None:
     from ...agents.run_executor import execute_component
 
     summary = (f"mission complete: {len(records)} item(s) from {len(visited)} page(s)"
@@ -238,7 +261,7 @@ async def _finish(session, agent_run, spec, records, visited, extract_enabled) -
             outcome=(ExperienceOutcome.SUCCEEDED if records or not extract_enabled
                      else ExperienceOutcome.PARTIAL),
             score=min(1.0, len(records) / max(1, spec.max_pages)),
-            lessons=[f"seeds {[str(u) for u in spec.seed_urls[:2]]} yielded "
+            lessons=[f"seeds {[str(u) for u in seeds[:2]]} yielded "
                      f"{len(records)} records over {len(visited)} pages"])
     except Exception as exc:  # strategy memory must never fail the mission
         log.info("mission experience record failed: %s", exc)

@@ -40,7 +40,7 @@ export default function SpiderWebLab({ projectId }: { projectId: string }) {
   const [active, setActive] = useState<AgentRunView | null>(null);
   const [objective, setObjective] = useState("");
   const [seeds, setSeeds] = useState("");
-  const [fields, setFields] = useState("title, description");
+  const [fields, setFields] = useState("");
   const [maxPages, setMaxPages] = useState(30);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,19 +98,20 @@ export default function SpiderWebLab({ projectId }: { projectId: string }) {
           🕸️ SpiderWeb <span className="ml-2 text-sm text-[#22D3EE]">the agentic web navigator</span>
         </h2>
         <p className="mt-1 text-xs text-slate-400">
-          Delegate a dig: it navigates the site (redirects, listings, detail pages), extracts
-          every matching item into a real Dataset with per-row provenance, honors robots.txt,
-          and resumes if stopped.
+          Delegate a dig: only the objective is required — with no seeds it finds starting
+          points itself via web, research-paper and reddit search, then navigates (redirects,
+          listings, detail pages), extracts matching items into a real Dataset with per-row
+          provenance, honors robots.txt, and resumes if stopped.
         </p>
         <div className="mt-4 grid gap-2 md:grid-cols-2">
           <input value={objective} onChange={(e) => setObjective(e.target.value)}
             placeholder='Objective — e.g. "find all data-analyst job posts with salary + location"'
             className="rounded-lg border border-[#1E293B] bg-[#0F1A2E] px-3 py-2 text-sm text-white placeholder:text-slate-500" />
           <input value={seeds} onChange={(e) => setSeeds(e.target.value)}
-            placeholder="Seed URL(s) — https://…"
+            placeholder="Seed URL(s) — optional; empty = the agent finds seeds via web/paper/reddit search"
             className="rounded-lg border border-[#1E293B] bg-[#0F1A2E] px-3 py-2 text-sm text-white placeholder:text-slate-500" />
           <input value={fields} onChange={(e) => setFields(e.target.value)}
-            placeholder="Fields to extract (comma-separated)"
+            placeholder="Fields to extract — optional; empty = snapshot crawl"
             className="rounded-lg border border-[#1E293B] bg-[#0F1A2E] px-3 py-2 text-sm text-white placeholder:text-slate-500" />
           <div className="flex items-center gap-3">
             <label className="text-xs text-slate-400">max pages</label>
@@ -118,7 +119,7 @@ export default function SpiderWebLab({ projectId }: { projectId: string }) {
               onChange={(e) => setMaxPages(Number(e.target.value) || 30)}
               className="w-24 rounded-lg border border-[#1E293B] bg-[#0F1A2E] px-3 py-2 text-sm text-white" />
             <button onClick={launch}
-              disabled={busy || !objective.trim() || !seeds.trim()}
+              disabled={busy || !objective.trim()}
               className="rounded-full bg-[#22D3EE] px-5 py-2 text-sm font-bold text-[#0B1220] shadow-[0_0_18px_rgba(34,211,238,0.45)] transition hover:-translate-y-px disabled:opacity-40">
               {busy ? "Launching…" : "🕷️ Launch mission"}
             </button>

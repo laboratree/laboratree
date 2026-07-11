@@ -204,6 +204,66 @@ def test_mission_resumes_from_frontier(monkeypatch):
         assert len(pages_final) > 1                            # continued past page 1
 
 
+def test_mission_discovers_seeds_via_search_belt_when_none_given(monkeypatch):
+    import laboratree.core.search as search_mod
+    import laboratree.labs.spiderweb as sw
+    from laboratree.core.search import SearchHit
+
+    monkeypatch.setattr(sw, "extract_record", _extractor)
+    monkeypatch.setattr(sw.robots, "allowed", lambda url: True)
+    monkeypatch.setattr(sw, "POLITENESS_S", 0.0)
+    fake = FakeBrowser()
+    monkeypatch.setattr(sw, "get_browser", lambda: fake)
+    # the search belt supplies the seeds: web finds the site (plus a dupe), research is DOWN
+    # (fail-open), reddit contributes nothing
+    monkeypatch.setattr(search_mod, "web_search", lambda q, count=None: [
+        SearchHit(title="Jobs board", url="https://jobs.example.org/",
+                  description="job openings with salary"),
+        SearchHit(title="Jobs board dupe", url="https://jobs.example.org",
+                  description="same site"),
+    ])
+    monkeypatch.setattr(search_mod, "research_search",
+                        lambda q, count=None: (_ for _ in ()).throw(RuntimeError("down")))
+    monkeypatch.setattr(search_mod, "reddit_search", lambda q, count=None: [])
+
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+        mission = client.post(
+            f"/api/projects/{project_id}/spiderweb/missions",
+            json={"objective": "find all job openings with salary",
+                  "target_schema": {"title": "job title", "salary": "salary"},
+                  "max_pages": 10, "max_depth": 2},                # NO seed_urls
+            headers=headers)
+        assert mission.status_code == 200, mission.text
+        run = client.get(f"/api/projects/{project_id}/agent-runs/{mission.json()['agent_run_id']}",
+                         headers=headers).json()
+        assert run["status"] == "succeeded"
+        notes = [s for s in run["steps"] if s.get("kind") == "note"]
+        assert any("discovered 1 seed" in str(n.get("note", "")) for n in notes)
+        assert fake.opened and fake.opened[0] == "https://jobs.example.org/"
+        missions = client.get(f"/api/projects/{project_id}/spiderweb/missions",
+                              headers=headers).json()
+        assert missions[0]["items"] == 2                       # crawled + extracted as usual
+
+
+def test_mission_without_seeds_and_no_search_fails_honestly(monkeypatch):
+    import laboratree.core.search as search_mod
+
+    for name in ("web_search", "research_search", "reddit_search"):
+        monkeypatch.setattr(search_mod, name, lambda q, count=None: [])
+
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+        mission = client.post(
+            f"/api/projects/{project_id}/spiderweb/missions",
+            json={"objective": "job openings", "max_pages": 3},
+            headers=headers).json()
+        run = client.get(f"/api/projects/{project_id}/agent-runs/{mission['agent_run_id']}",
+                         headers=headers).json()
+        assert run["status"] == "failed"
+        assert "no seed URLs" in run["summary"]                # honest, actionable
+
+
 def test_keyless_mission_snapshots_without_fabricating(monkeypatch):
     import laboratree.labs.spiderweb as sw
     from laboratree.core.config import settings

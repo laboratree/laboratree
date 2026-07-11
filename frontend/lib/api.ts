@@ -1449,8 +1449,8 @@ export const storageApi = {
 };
 
 export const spiderApi = {
-  create: (projectId: string, spec: { objective: string; seed_urls: string[];
-           target_schema: Record<string, string>; max_pages?: number; max_depth?: number;
+  create: (projectId: string, spec: { objective: string; seed_urls?: string[];
+           target_schema?: Record<string, string>; max_pages?: number; max_depth?: number;
            allow_domains?: string[] }) =>
     apiPost<{ agent_run_id: string }>(`/api/projects/${projectId}/spiderweb/missions`, spec),
   list: (projectId: string) =>
