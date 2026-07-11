@@ -19,6 +19,7 @@ from sqlalchemy import select
 from ..core.deps import Principal, PrincipalDep, SessionDep, require_role
 from ..core.llm.context import use_llm_context
 from ..fieldwork.models import Survey
+from ..labs.synth.conditioning import condition_traits
 from ..labs.synth.engine import get_persona_engine
 from ..labs.synth.graph_mirror import mirror_cohort_graph
 from ..labs.synth.personas import build_personas
@@ -38,6 +39,10 @@ class CohortIn(BaseModel):
     name: str = "Cohort"
     n: int = 25
     margins: dict[str, dict[str, float]] = {}
+    # objective conditioning: OFF by default; purpose="rct" FORCES neutral (bias guard)
+    objective: str | None = None
+    conditioning: str = "neutral"          # "neutral" | "objective"
+    purpose: str = "survey"                # "survey" | "rct"
 
 
 class CohortOut(BaseModel):
@@ -47,6 +52,10 @@ class CohortOut(BaseModel):
     n: int
     waves: int
     margins: dict[str, Any]
+    # honesty labels: conditioning mode + the exact mean trait bias injected
+    objective: str | None = None
+    conditioning: str = "neutral"
+    trait_delta: dict[str, Any] = {}
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -88,22 +97,44 @@ async def create_cohort(
 ) -> PersonaCohort:
     """Build + persist a cohort of stable-trait personas from target margins."""
     await _require_project(session, principal, project_id)
+    if body.conditioning not in ("neutral", "objective"):
+        raise HTTPException(status_code=422, detail="conditioning must be neutral|objective")
+    if body.purpose == "rct" and body.conditioning == "objective":
+        raise HTTPException(
+            status_code=422,
+            detail="objective-conditioned cohorts would bias causal estimates — use a "
+                   "neutral cohort for RCT/impact work")
+    if body.conditioning == "objective" and not (body.objective or "").strip():
+        raise HTTPException(status_code=422, detail="objective conditioning needs an objective")
     skeletons = build_personas(body.n, body.margins)
     for skeleton in skeletons:  # give each a stable handle before wiring the social graph
         skeleton["handle"] = str(skeleton.get("id", ""))
     edges = build_social_graph(skeletons)
     cohort = PersonaCohort(org_id=principal.org_id, project_id=project_id,
                            name=body.name, margins=body.margins, graph=edges,
-                           n=len(skeletons), waves=0)
+                           n=len(skeletons), waves=0,
+                           objective=body.objective,
+                           conditioning=body.conditioning, trait_delta={})
     session.add(cohort)
     await session.flush()  # assign cohort.id
+    mean_delta: dict[str, float] = {}
     for skeleton in skeletons:
         traits = assign_traits(skeleton)
+        attributes = dict(skeleton.get("attributes") or {})
+        if body.conditioning == "objective":
+            conditioned = condition_traits(
+                {"traits": traits, "bio": bio_sketch(skeleton, traits)}, body.objective or "")
+            traits = conditioned.traits
+            attributes.update(conditioned.attitudes)
+            for trait, shift in conditioned.delta.items():
+                mean_delta[trait] = mean_delta.get(trait, 0.0) + shift / len(skeletons)
         session.add(Persona(
             org_id=principal.org_id, cohort_id=cohort.id, handle=skeleton["handle"],
-            attributes=skeleton.get("attributes") or {}, traits=traits,
+            attributes=attributes, traits=traits,
             bio=bio_sketch(skeleton, traits), memory=[],
         ))
+    if body.conditioning == "objective":
+        cohort.trait_delta = {t: round(v, 4) for t, v in mean_delta.items()}
     await session.commit()
     await session.refresh(cohort)
     await mirror_cohort_graph(cohort.id, principal.org_id, skeletons, edges)  # best-effort

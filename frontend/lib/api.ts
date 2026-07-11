@@ -1460,6 +1460,9 @@ export type PersonaCohort = {
   n: number;
   waves: number;
   margins: Record<string, Record<string, number>>;
+  objective?: string | null;
+  conditioning?: "neutral" | "objective";
+  trait_delta?: Record<string, number>;
   created_at: string;
 };
 export type PersonaRow = {

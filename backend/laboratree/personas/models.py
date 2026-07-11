@@ -24,6 +24,12 @@ class PersonaCohort(PkMixin, OrgScopedMixin, TimestampMixin, Base):
     graph: Mapped[list] = mapped_column(JSONB, default=list)     # social edges [{a,b,weight}]
     n: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     waves: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # surveys run so far
+    # objective conditioning (honesty labels): neutral by default; conditioned cohorts record
+    # the survey objective AND the exact per-trait bias injected (trait_delta) — and are
+    # REFUSED for RCT/impact work at the API.
+    objective: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    conditioning: Mapped[str] = mapped_column(String(20), default="neutral", nullable=False)
+    trait_delta: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     personas: Mapped[list[Persona]] = relationship(
         back_populates="cohort", cascade="all, delete-orphan"

@@ -84,7 +84,15 @@ export default function PersonaLab({ projectId }: { projectId: string }) {
             <button key={c.id} onClick={() => setSelected(c.id)}
               className="flex items-center justify-between rounded-2xl border border-line bg-white p-4 text-left hover:border-leaf">
               <span className="font-medium text-forest">{c.name}</span>
-              <span className="text-xs text-ink/50">{c.n} personas · {c.waves} wave{c.waves === 1 ? "" : "s"}</span>
+              <span className="text-xs text-ink/50">
+                {c.n} personas · {c.waves} wave{c.waves === 1 ? "" : "s"}
+                {c.conditioning === "objective" && (
+                  <span title={`Objective-conditioned — mean trait bias: ${JSON.stringify(c.trait_delta ?? {})}. Not valid for RCT/impact estimation.`}
+                    className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                    ⚠ objective-conditioned
+                  </span>
+                )}
+              </span>
             </button>
           ))}
         </div>
