@@ -6,11 +6,12 @@ import "@xyflow/react/dist/style.css";
 import Papa from "papaparse";
 import {
   Api, demoApi, flowsApi,
-  type ComponentSpecLite, type PipelineResult, type SuperviseReport,
+  type ComponentSpecLite, type FlowOp, type PipelineResult, type SuperviseReport,
 } from "@/lib/api";
 import { FLOW_TEMPLATES, type FlowNodeKind, type FlowPhase } from "@/lib/pipelineTemplates";
 import type { LabTabKey } from "@/lib/labTabs";
 import FileDropzone from "@/components/FileDropzone";
+import LabChat from "@/components/LabChat";
 import { buildFlowGraph } from "./layout";
 import { LaneNode } from "./LaneNode";
 import { StageNode } from "./StageNode";
@@ -81,6 +82,28 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
 
   function updateStage(id: string, patch: Partial<StageState>) {
     setStages((all) => all.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  }
+
+  // the pipeline agent's chat can reshape the flow — ops are applied here, on the canvas state
+  function applyFlowOps(ops: FlowOp[]) {
+    for (const op of ops) {
+      if (op.op === "add_stage") {
+        const id = `n${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+        setStages((s) => [...s, {
+          id, phase: "custom",
+          kind: (op.kind === "agent" ? "agent" : op.kind === "component" ? "component" : "manual"),
+          label: op.label ?? "New stage",
+          description: op.description ?? op.label ?? "",
+          status: "idle" as StepStatus, markedDone: false,
+        }]);
+      } else if (op.op === "remove_stage" && op.label) {
+        const needle = op.label.toLowerCase();
+        setStages((all) => all.filter(
+          (s) => !s.label.toLowerCase().includes(needle) && s.id !== op.label));
+      } else if (op.op === "supervise" || op.op === "run_flow") {
+        void runOrchestrated();
+      }
+    }
   }
 
   function removeStage(id: string) {
@@ -273,6 +296,8 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="pipeline" title="Pipeline agent"
+        onFlowOps={applyFlowOps} />
       <div className="overflow-hidden rounded-2xl border border-line bg-white">
         <div className="flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-forest to-[#1F5A43] px-5 py-4">
           <div className="min-w-[240px]">
@@ -295,17 +320,18 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={runFlow} disabled={busy || runnableCount === 0}
-              className="rounded-full bg-leaf px-5 py-2 text-sm font-bold text-white shadow-[0_2px_12px_rgba(109,179,63,0.5)] transition hover:-translate-y-px hover:opacity-90 disabled:opacity-50 disabled:shadow-none">
-              {busy ? "Running…" : `▶ Run ${runnableCount} step${runnableCount === 1 ? "" : "s"}`}
-            </button>
             {!!flowKey && (
               <button onClick={runOrchestrated} disabled={busy || stages.length === 0}
                 title="Supervised run: the Supervisor dispatches every phase to its Lab agent, spawns the DeepAgent for uncovered stages, and pauses at human gates — durable and resumable."
-                className="rounded-full border border-[#A8D08D]/50 bg-white/10 px-5 py-2 text-sm font-bold text-white transition hover:bg-white/20 disabled:opacity-50">
-                {busy ? "Supervising…" : "⚡ Supervise flow"}
+                className="rounded-full bg-leaf px-5 py-2 text-sm font-bold text-white shadow-[0_2px_12px_rgba(109,179,63,0.5)] transition hover:-translate-y-px hover:opacity-90 disabled:opacity-50 disabled:shadow-none">
+                {busy ? "Running all phases…" : `⚡ Run all ${stages.length} phases`}
               </button>
             )}
+            <button onClick={runFlow} disabled={busy || runnableCount === 0}
+              title="Runs ONLY the ⚙ analytic component stages against the loaded CSV — lab/agent phases are untouched."
+              className="rounded-full border border-[#A8D08D]/50 bg-white/10 px-5 py-2 text-sm font-bold text-white transition hover:bg-white/20 disabled:opacity-50">
+              {busy ? "Running…" : `▶ Analytic steps only (${runnableCount})`}
+            </button>
           </div>
         </div>
 

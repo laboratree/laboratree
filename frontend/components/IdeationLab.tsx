@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useState } from "react";
 import {
   Api,
@@ -45,6 +46,7 @@ export default function IdeationLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      <LabChat projectId={projectId} lab="ideation" />
       <div className="rounded-2xl border border-line bg-white p-5">
         <h2 className="font-display text-xl text-forest">Co-Scientist</h2>
         <p className="mt-1 text-sm text-muted">

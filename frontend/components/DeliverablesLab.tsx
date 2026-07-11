@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useCallback, useEffect, useState } from "react";
 import {
   ApiError,
@@ -38,6 +39,7 @@ export default function DeliverablesLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="deliver" />
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink/70">
           Compose client-ready reports. Every number, table, or quote must bind to real Evidence —

@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useEffect, useMemo, useState } from "react";
 import {
   Api,
@@ -88,6 +89,7 @@ export default function LearningLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="learning" />
       <div className="max-w-2xl">
         <h2 className="font-display text-3xl leading-tight text-forest">
           Watch any model learn —{" "}

@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useState } from "react";
 import { Api, type BiasFinding, type PilotResult, type SampleResult, type SurveyQuestion } from "@/lib/api";
 
@@ -16,6 +17,7 @@ export default function CollectionLab({ projectId }: { projectId: string }) {
   const [tool, setTool] = useState<Tool>("sample");
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="collection" />
       <div className="flex flex-wrap gap-2">
         {TOOLS.map((t) => (
           <button

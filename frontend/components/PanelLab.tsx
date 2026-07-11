@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -42,6 +43,7 @@ export default function PanelLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="panel" />
       <p className="text-sm text-ink/70">
         Your respondent panel — the only place personal data lives. Survey answers stay
         pseudonymous; deleting a person here never deletes their (unlinkable) answers.

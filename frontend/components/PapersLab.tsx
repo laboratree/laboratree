@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useEffect, useState } from "react";
 import { Api, type Paper, type PaperCardData } from "@/lib/api";
 import FileDropzone from "@/components/FileDropzone";
@@ -83,6 +84,7 @@ export default function PapersLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      <LabChat projectId={projectId} lab="papers" />
       <div className="rounded-2xl border border-line bg-white p-5">
         <h2 className="font-display text-xl text-forest">Understand a paper</h2>
         <p className="mt-1 text-sm text-muted">

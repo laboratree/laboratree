@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -85,6 +86,7 @@ export default function QualLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="qual" />
       <p className="text-sm text-ink/70">
         Upload interviews or testimony (audio/video) — they transcribe automatically into
         timestamped, correctable transcripts.

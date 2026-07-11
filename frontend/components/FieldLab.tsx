@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useCallback, useEffect, useState } from "react";
 import {
   Api,
@@ -63,6 +64,7 @@ export default function FieldLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="field" />
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink/70">
           Design a survey, publish a public link, and watch responses land in real time.

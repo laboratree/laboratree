@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useState } from "react";
 import Papa from "papaparse";
 import { Api } from "@/lib/api";
@@ -21,6 +22,7 @@ export default function InsightLab({ projectId }: { projectId: string }) {
   const [tool, setTool] = useState<InsightTool>("explore");
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="insight" />
       <div className="flex flex-wrap gap-2">
         {INSIGHT_TOOLS.map((t) => (
           <button

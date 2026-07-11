@@ -1,5 +1,6 @@
 "use client";
 
+import LabChat from "@/components/LabChat";
 import { useCallback, useEffect, useState } from "react";
 import {
   ApiError,
@@ -56,6 +57,7 @@ export default function PersonaLab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      <LabChat projectId={projectId} lab="personas" />
       <p className="text-sm text-ink/70">
         Persistent synthetic respondents with stable personalities and memory — the same cohort can
         be re-surveyed across waves and stays consistent. Synthetic: for design, never real evidence.

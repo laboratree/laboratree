@@ -1372,6 +1372,56 @@ export const flowsApi = {
     apiPost<SuperviseReport>(`/api/flows/threads/${threadId}/resume`, { approved, note }),
 };
 
+// ---------------- Lab agents (chat + live runs) ----------------
+export type FlowOp = {
+  op: "add_stage" | "remove_stage" | "update_stage" | "set_params" | "run_flow" | "supervise";
+  kind?: string;
+  label?: string;
+  description?: string;
+  params?: Record<string, unknown>;
+};
+export type AgentStep = {
+  kind?: "plan" | "todo" | "tool" | "critic";
+  step?: number;
+  id?: number;
+  status?: string;
+  objective?: string;
+  summary?: string;
+  thought?: string;
+  tool?: string;
+  args?: string;
+  observation?: string;
+  dropped?: number;
+  todos?: { id: number; objective: string; status: string }[];
+};
+export type AgentRunView = {
+  id: string;
+  lab: string;
+  task: string;
+  status: "queued" | "running" | "succeeded" | "gated" | "failed";
+  steps: AgentStep[];
+  findings: Record<string, unknown>[];
+  summary: string;
+  run_id: string | null;
+  trace_key: string;
+  llm_calls: number;
+  tokens: number;
+  cost_usd: number;
+};
+export type ChatMessageView = { role: "user" | "agent"; content: string; agent_run_id?: string };
+export const labAgentsApi = {
+  chat: (projectId: string, lab: string, message: string, threadId?: string) =>
+    apiPost<{ thread_id: string; reply: string; agent_run_id: string | null;
+              flow_ops: FlowOp[] }>(
+      `/api/projects/${projectId}/labs/${lab}/chat`,
+      { message, ...(threadId ? { thread_id: threadId } : {}) }),
+  run: (projectId: string, agentRunId: string) =>
+    apiGet<AgentRunView>(`/api/projects/${projectId}/agent-runs/${agentRunId}`),
+  threads: (projectId: string, lab: string) =>
+    apiGet<{ id: string; messages: unknown[]; updated_at: string }[]>(
+      `/api/projects/${projectId}/labs/${lab}/threads`),
+};
+
 // ---------------- Persona Lab ----------------
 export type PersonaCohort = {
   id: string;
