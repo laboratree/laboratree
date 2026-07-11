@@ -20,7 +20,9 @@ results** (Evidence Ledger), **leakage detection + reproducibility**, **Co-Scien
 
 ## Run it
 ```bash
-docker compose -f infra/docker-compose.yml up -d        # datastores + services
+docker compose --env-file .env -f infra/docker-compose.yml up -d   # datastores + services
+#   ^ --env-file is required: compose reads .env from infra/ otherwise, and the default
+#     ports won't match the app's (postgres 5433, mongo 27018, neo4j bolt 7689)
 cd backend && uv run uvicorn laboratree.main:app --reload   # or run api locally
 cd frontend && npm install && npm run dev
 ```
