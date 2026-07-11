@@ -49,11 +49,13 @@ def record_llm_call(
     latency_ms: float = 0.0,
     status: str = "ok",
     error: str | None = None,
+    cost_usd: float | None = None,
 ) -> None:
     if not settings.llm_tracing:
         return
     ctx = current_llm_context()
-    cost = _estimate_cost(total_tokens)
+    # real per-model cost when the gateway priced the response; flat estimate otherwise
+    cost = cost_usd if cost_usd is not None else _estimate_cost(total_tokens)
     row = (
         uuid.uuid4(),
         _as_uuid(ctx.org_id),

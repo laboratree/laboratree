@@ -12,6 +12,7 @@ export const LAB_TABS = [
   { key: "papers", label: "Paper Lab", short: "Papers" },
   { key: "learning", label: "Learning Lab", short: "Learning" },
   { key: "deliver", label: "Deliverables", short: "Deliverables" },
+  { key: "artifacts", label: "Artifact Store", short: "Artifacts" },
   { key: "spiderweb", label: "SpiderWeb", short: "SpiderWeb" },
   { key: "pipeline", label: "Pipeline", short: "Pipeline" },
   { key: "llm", label: "LLM Activity", short: "LLM" },
@@ -47,7 +48,7 @@ export const LAB_TAB_GROUPS: LabTabGroup[] = [
   { key: "analyze", title: "Analyze", accent: "#D97706",
     tabs: ["insight", "learning"] },
   { key: "deliver", title: "Deliver", accent: "#3E7D32",
-    tabs: ["deliver"] },
+    tabs: ["deliver", "artifacts"] },
   { key: "orchestrate", title: "Orchestrate", accent: "#8B5CF6",
     tabs: ["pipeline", "llm"] },
 ];

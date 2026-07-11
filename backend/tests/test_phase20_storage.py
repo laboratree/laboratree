@@ -70,3 +70,54 @@ def test_flow_storage_listing_and_guarded_download(monkeypatch):
         # per-phase io mirrored onto the flow report
         by_id = {s["id"]: s for s in report["stages"]}
         assert by_id["eda"]["artifacts"]["io"]["in"]["rows"] > 0
+
+
+def test_artifact_store_groups_by_lab_and_is_org_scoped(monkeypatch):
+    import asyncio
+
+    from laboratree.core.config import settings
+
+    monkeypatch.setattr(settings, "llm_provider", "azure")
+    monkeypatch.setattr(settings, "azure_openai_api_key", "")
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+
+        from laboratree.agents.tools.context_tools import note_blob
+        from laboratree.core.db.postgres import sessionmaker
+        from laboratree.tenancy.models import Organization  # noqa: F401 (model import order)
+
+        async def _seed():
+            async with sessionmaker()() as session:
+                from sqlalchemy import text as sql_text
+                org = (await session.execute(sql_text(
+                    "SELECT org_id FROM projects WHERE id = :p"),
+                    {"p": project_id})).scalar()
+                await note_blob(session, org_id=org, project_id=uuid.UUID(project_id),
+                                key=f"spiderweb/{uuid.uuid4()}/page1.txt", kind="page",
+                                size=120, description="Job post: Senior Analyst @ X",
+                                source="https://jobs.example.org/1")
+                await note_blob(session, org_id=org, project_id=uuid.UUID(project_id),
+                                key=f"flows/{uuid.uuid4()}/lab-insight/trace.json",
+                                kind="trace", size=300, description="Insight agent trace",
+                                source="")
+                await session.commit()
+        asyncio.run(_seed())
+
+        store = client.get(f"/api/projects/{project_id}/artifact-store",
+                           headers=headers).json()
+        labs = {e["lab"] for e in store}
+        assert {"spiderweb", "insight"} <= labs
+        assert all(e["description"] for e in store if e["origin"] == "blob")
+
+        # lab filter narrows
+        only = client.get(f"/api/projects/{project_id}/artifact-store?lab=spiderweb",
+                          headers=headers).json()
+        assert only and all(e["lab"] == "spiderweb" for e in only)
+
+        # another org: project 404 (no cross-org browsing)
+        other = client.post("/api/auth/register",
+                            json={"email": f"y-{uuid.uuid4().hex[:8]}@example.com",
+                                  "password": "supersecret1", "full_name": "Y"}).json()
+        stranger = {"Authorization": f"Bearer {other['access_token']}"}
+        assert client.get(f"/api/projects/{project_id}/artifact-store",
+                          headers=stranger).status_code == 404

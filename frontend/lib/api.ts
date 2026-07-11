@@ -1406,6 +1406,12 @@ export type AgentStep = {
   reason?: string;
   tokens?: number;
   note?: string;
+  // SpiderWeb mission log
+  items?: number;
+  queued?: number;
+  snapshot_key?: string;
+  seeds?: string[];
+  fields?: Record<string, string>;
 };
 export type AgentRunView = {
   id: string;
@@ -1445,7 +1451,39 @@ export const storageApi = {
   flowRun: (flowRunId: string) =>
     apiGet<{ stages: Record<string, BucketFile[]>; total_files: number; total_bytes: number }>(
       `/api/flows/runs/${flowRunId}/storage`),
-  downloadUrl: (key: string) => `/api/blobs/download?key=${encodeURIComponent(key)}`,
+  // downloads need the auth header, so links go through fetch -> ObjectURL (house pattern)
+  download: async (key: string): Promise<string> => {
+    const res = await fetch(`${API_URL}/api/blobs/download?key=${encodeURIComponent(key)}`,
+      { headers: authHeaders() });
+    if (!res.ok) throw new ApiError(res.status, "blob fetch failed");
+    return URL.createObjectURL(await res.blob());
+  },
+  open: async (key: string): Promise<void> => {
+    window.open(await storageApi.download(key), "_blank");
+  },
+};
+
+export type StoreArtifact = {
+  origin: "blob" | "run";
+  key: string;
+  name: string;
+  kind: string;
+  size: number;
+  description: string;
+  source: string;
+  lab: string;
+  created_at: string;
+  artifact_id?: string;
+};
+export const artifactStoreApi = {
+  list: (projectId: string, lab?: string) =>
+    apiGet<StoreArtifact[]>(`/api/projects/${projectId}/artifact-store${lab ? `?lab=${lab}` : ""}`),
+  openRunArtifact: async (artifactId: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/api/artifacts/${artifactId}/download`,
+      { headers: authHeaders() });
+    if (!res.ok) throw new ApiError(res.status, "artifact fetch failed");
+    window.open(URL.createObjectURL(await res.blob()), "_blank");
+  },
 };
 
 export const spiderApi = {

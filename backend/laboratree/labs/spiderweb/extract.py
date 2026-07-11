@@ -20,6 +20,30 @@ _SYSTEM = (
 )
 
 
+_SCHEMA_SYSTEM = (
+    "Given a web-extraction objective, propose the 3-6 fields ONE extracted record should "
+    'have. Respond ONLY as JSON: {"fields": {"<snake_case_name>": "<what it captures>"}}. '
+    "Concrete, page-extractable fields only (e.g. title, authors, year, method, url)."
+)
+
+
+def derive_schema(objective: str) -> dict[str, str]:
+    """Objective → extraction fields, so objective-only missions still collect records.
+
+    Keyless or on failure → {} (the mission then runs an honest snapshot crawl).
+    """
+    if not agentic_llm.is_configured():
+        return {}
+    try:
+        raw = agentic_llm.default_complete(_SCHEMA_SYSTEM, f"OBJECTIVE:\n{objective[:800]}",
+                                           role="generation")
+    except Exception as exc:
+        log.info("schema derivation failed (%s); snapshot mode", exc)
+        return {}
+    fields = (loads_lenient(raw) or {}).get("fields") or {}
+    return {str(k)[:40]: str(v)[:200] for k, v in list(fields.items())[:6] if k}
+
+
 def extract_record(schema: dict[str, str], page_text: str, url: str) -> dict[str, Any] | None:
     """Returns the record dict (with source_url) or None when the page isn't a match."""
     fields = "\n".join(f"- {name}: {desc}" for name, desc in schema.items())
@@ -35,4 +59,4 @@ def extract_record(schema: dict[str, str], page_text: str, url: str) -> dict[str
     return record
 
 
-__all__ = ["extract_record", "MAX_PAGE_CHARS"]
+__all__ = ["extract_record", "derive_schema", "MAX_PAGE_CHARS"]

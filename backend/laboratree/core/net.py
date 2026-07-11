@@ -174,4 +174,20 @@ def extract_links(body: bytes, base_url: str) -> list[LinkInfo]:
     return _parse_html(body, base_url).links
 
 
-__all__ = ["is_public_http_url", "safe_fetch", "html_to_text", "extract_links", "LinkInfo"]
+def pdf_to_text(body: bytes, *, max_pages: int = 30) -> str:
+    """Readable text from a PDF body (crawlers hit papers/reports constantly). Fail-soft."""
+    if not body.lstrip()[:5].startswith(b"%PDF"):
+        return ""
+    try:
+        import io
+
+        import pdfplumber
+
+        with pdfplumber.open(io.BytesIO(body)) as pdf:
+            pages = [page.extract_text() or "" for page in pdf.pages[:max_pages]]
+        return "\n".join(" ".join(p.split()) for p in pages if p)[:60_000]
+    except Exception:  # scanned/encrypted/malformed -> no text, never a crash
+        return ""
+
+
+__all__ = ["is_public_http_url", "safe_fetch", "html_to_text", "extract_links", "pdf_to_text", "LinkInfo"]

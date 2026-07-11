@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from .net import LinkInfo, extract_links, html_to_text, is_public_http_url, safe_fetch
+from .net import LinkInfo, extract_links, html_to_text, is_public_http_url, pdf_to_text, safe_fetch
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +53,16 @@ class HttpBrowser:
         return True
 
     async def page_text(self) -> str:
+        # crawls constantly land on papers/reports — read PDFs as text, not bytes
+        if self._body.lstrip()[:5].startswith(b"%PDF"):
+            import asyncio
+
+            return await asyncio.to_thread(pdf_to_text, self._body)
         return html_to_text(self._body)
 
     async def links(self) -> list[LinkInfo]:
+        if self._body.lstrip()[:5].startswith(b"%PDF"):
+            return []                                   # PDFs are leaves, no links to walk
         return extract_links(self._body, self._url)[:MAX_LINKS]
 
     async def click(self, link_id: int) -> bool:
@@ -116,6 +123,11 @@ class PlaywrightBrowser:
             return False
 
     async def page_text(self) -> str:
+        if self.current_url().split("?")[0].lower().endswith(".pdf"):
+            import asyncio
+
+            body = await asyncio.to_thread(safe_fetch, self.current_url())
+            return await asyncio.to_thread(pdf_to_text, body or b"")
         try:
             text = await self._page.inner_text("body", timeout=5_000)
             return " ".join(text.split())[:40_000]

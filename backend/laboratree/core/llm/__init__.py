@@ -37,6 +37,20 @@ def azure_resource_root(endpoint: str) -> str:
     return endpoint.rstrip("/").removesuffix("/openai/v1")
 
 
+def _response_cost(response: Any) -> float | None:
+    """Real per-model cost from LiteLLM's pricing map; None when the model is unknown to it."""
+    if response is None:
+        return None
+    hidden = getattr(response, "_hidden_params", None) or {}
+    cost = hidden.get("response_cost")
+    if cost is None:
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+        except Exception:  # unknown/custom model — the flat-price fallback still applies
+            return None
+    return round(float(cost), 6) if cost else None
+
+
 class LLMClient:
     """Minimal provider-agnostic client implementing the SDK ``LLM`` protocol."""
 
@@ -107,7 +121,7 @@ class LLMClient:
                         (time.perf_counter() - start) * 1000, "error", str(exc))
             raise
         self._trace(params["model"], role, getattr(resp, "usage", None),
-                    (time.perf_counter() - start) * 1000, "ok", None)
+                    (time.perf_counter() - start) * 1000, "ok", None, response=resp)
         return resp.choices[0].message.content or ""
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -120,18 +134,18 @@ class LLMClient:
                         (time.perf_counter() - start) * 1000, "error", str(exc))
             raise
         self._trace(self._embed_model, "embed", getattr(resp, "usage", None),
-                    (time.perf_counter() - start) * 1000, "ok", None)
+                    (time.perf_counter() - start) * 1000, "ok", None, response=resp)
         return [item["embedding"] if isinstance(item, dict) else item.embedding
                 for item in resp.data]
 
-    def _trace(self, model, role, usage, latency_ms, status, error) -> None:
+    def _trace(self, model, role, usage, latency_ms, status, error, response=None) -> None:
         pt = int(getattr(usage, "prompt_tokens", 0) or 0)
         ct = int(getattr(usage, "completion_tokens", 0) or 0)
         tt = int(getattr(usage, "total_tokens", 0) or (pt + ct))
         try:
             record_llm_call(provider=self.provider, model=model or "", role=role, prompt_tokens=pt,
                             completion_tokens=ct, total_tokens=tt, latency_ms=latency_ms,
-                            status=status, error=error)
+                            status=status, error=error, cost_usd=_response_cost(response))
         except Exception as exc:
             # fail-open: LLM tracing must never break a completion/embedding call.
             log.debug("LLM call tracing failed (non-fatal): %s", exc)

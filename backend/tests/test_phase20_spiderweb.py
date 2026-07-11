@@ -246,6 +246,44 @@ def test_mission_discovers_seeds_via_search_belt_when_none_given(monkeypatch):
         assert missions[0]["items"] == 2                       # crawled + extracted as usual
 
 
+def test_objective_only_mission_derives_schema_and_extracts(monkeypatch):
+    import laboratree.labs.spiderweb as sw
+
+    monkeypatch.setattr(sw, "derive_schema",
+                        lambda objective: {"title": "job title", "salary": "salary"})
+    monkeypatch.setattr(sw, "extract_record", _extractor)
+    monkeypatch.setattr(sw.robots, "allowed", lambda url: True)
+    monkeypatch.setattr(sw, "POLITENESS_S", 0.0)
+    monkeypatch.setattr(sw, "get_browser", lambda: FakeBrowser())
+
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+        mission = client.post(
+            f"/api/projects/{project_id}/spiderweb/missions",
+            json={"objective": "find all job openings with salary",
+                  "seed_urls": ["https://jobs.example.org/"],
+                  "max_pages": 10, "max_depth": 2},              # NO target_schema
+            headers=headers).json()
+        run = client.get(f"/api/projects/{project_id}/agent-runs/{mission['agent_run_id']}",
+                         headers=headers).json()
+        assert run["status"] == "succeeded"
+        notes = [s for s in run["steps"] if s.get("kind") == "note"]
+        assert any("derived extraction fields" in str(n.get("note", "")) for n in notes)
+        missions = client.get(f"/api/projects/{project_id}/spiderweb/missions",
+                              headers=headers).json()
+        assert missions[0]["items"] == 2                        # extraction really ran
+        # every visited page carries its downloadable snapshot key
+        pages = [s for s in run["steps"] if s.get("kind") == "page" and not s.get("skipped")]
+        assert pages and all(s.get("snapshot_key", "").startswith("spiderweb/") for s in pages)
+
+
+def test_pdf_bodies_read_as_text_not_bytes():
+    from laboratree.core.net import pdf_to_text
+
+    assert pdf_to_text(b"<html><body>hi</body></html>") == ""   # not a PDF
+    assert pdf_to_text(b"%PDF-1.7 garbage that will not parse") == ""  # fail-soft
+
+
 def test_mission_without_seeds_and_no_search_fails_honestly(monkeypatch):
     import laboratree.core.search as search_mod
 

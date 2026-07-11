@@ -16,6 +16,31 @@ def _fake_response(content: str = "ok"):
     )
 
 
+def test_trace_records_litellm_priced_cost(monkeypatch):
+    monkeypatch.setattr(settings, "llm_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "k")
+    monkeypatch.setattr(settings, "openai_base_url", "")
+    monkeypatch.setattr(settings, "openai_model", "gpt-5.4-mini")
+    monkeypatch.setattr(settings, "reasoning_model", "")
+    monkeypatch.setattr(settings, "generation_model", "")
+
+    priced = _fake_response("hello")
+    priced._hidden_params = {"response_cost": 0.00123456}         # litellm priced the call
+    monkeypatch.setattr(llm_mod.litellm, "completion", lambda **kw: priced)
+    recorded: dict = {}
+    monkeypatch.setattr(llm_mod, "record_llm_call", lambda **kw: recorded.update(kw))
+
+    LLMClient().complete("hi")
+    assert recorded["cost_usd"] == 0.001235                       # real cost, rounded
+
+    # unknown/custom model (no hidden cost, completion_cost raises) -> None, flat fallback later
+    monkeypatch.setattr(llm_mod.litellm, "completion", lambda **kw: _fake_response("hey"))
+    monkeypatch.setattr(llm_mod.litellm, "completion_cost",
+                        lambda **kw: (_ for _ in ()).throw(ValueError("unknown model")))
+    LLMClient().complete("hi")
+    assert recorded["cost_usd"] is None
+
+
 def test_azure_resource_root_strips_v1_route():
     assert azure_resource_root("https://x.openai.azure.com/openai/v1") == "https://x.openai.azure.com"
     assert azure_resource_root("https://x.openai.azure.com/openai/v1/") == "https://x.openai.azure.com"

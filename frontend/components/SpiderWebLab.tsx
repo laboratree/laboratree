@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { labAgentsApi, spiderApi, type AgentRunView, type SpiderMission } from "@/lib/api";
+import {
+  labAgentsApi,
+  spiderApi,
+  storageApi,
+  type AgentRunView,
+  type AgentStep,
+  type SpiderMission,
+} from "@/lib/api";
 
 // SpiderWeb — the agentic web navigator. Dark web-canvas theme: the mission graph grows LIVE
 // as pages are visited (nodes colored by yield), items stream into the table with provenance.
@@ -14,6 +21,48 @@ const NEON_HIT = "#4ADE80";
 const NEON_MISS = "#475569";
 
 type PageStep = { url: string; matched?: boolean; skipped?: string; depth?: number };
+
+// live narration of what the spider is doing — every persisted step, terminal-style
+function MissionLog({ steps }: { steps: AgentStep[] }) {
+  const endRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [steps.length]);
+  return (
+    <div className="max-h-44 overflow-y-auto rounded-lg border border-[#1E293B] bg-[#0F1A2E] p-2 font-mono text-[10px] leading-relaxed">
+      {steps.length === 0 && <p className="text-slate-500">waiting for the spider…</p>}
+      {steps.map((s, i) => {
+        if (s.kind === "note") {
+          return (
+            <p key={i} className="text-[#22D3EE]">
+              🧭 {s.note}
+              {s.seeds ? ` → ${s.seeds.map((u) => u.replace(/^https?:\/\//, "")).join(" · ")}` : ""}
+              {s.fields ? ` → ${Object.keys(s.fields).join(", ")}` : ""}
+            </p>
+          );
+        }
+        if (s.kind !== "page") return null;
+        const short = String(s.url ?? "").replace(/^https?:\/\//, "").slice(0, 80);
+        if (s.skipped) {
+          return <p key={i} className="text-slate-500">⛔ {short} — {s.skipped}</p>;
+        }
+        return (
+          <p key={i} className="text-slate-300">
+            🕷️ d{s.depth ?? 0} {short} —{" "}
+            {s.matched
+              ? <span className="text-[#4ADE80]">✅ item #{s.items}</span>
+              : "no match"}
+            {s.queued ? <span className="text-slate-500"> · +{s.queued} links</span> : null}
+            {s.snapshot_key ? (
+              <button onClick={() => void storageApi.open(s.snapshot_key!)}
+                title="open the archived page snapshot"
+                className="ml-1 text-[#22D3EE] hover:underline">📄</button>
+            ) : null}
+          </p>
+        );
+      })}
+      <div ref={endRef} />
+    </div>
+  );
+}
 
 function missionGraph(steps: PageStep[]): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = steps.map((s, i) => ({
@@ -143,7 +192,13 @@ export default function SpiderWebLab({ projectId }: { projectId: string }) {
               {active.status.toUpperCase()} · {pages.length} pages · {records.length} items
             </p>
             <p className="mt-1 text-xs text-slate-400">{active.summary || active.task}</p>
-            <div className="mt-3 max-h-72 overflow-y-auto">
+            <p className="mt-3 text-[10px] font-bold tracking-wider text-slate-400">
+              🧠 MISSION LOG
+            </p>
+            <div className="mt-1">
+              <MissionLog steps={active.steps ?? []} />
+            </div>
+            <div className="mt-3 max-h-56 overflow-y-auto">
               {records.map((r, i) => (
                 <div key={i} className="mb-2 rounded-lg border border-[#1E293B] bg-[#0F1A2E] p-2">
                   {Object.entries(r).filter(([k]) => k !== "source_url").map(([k, v]) => (

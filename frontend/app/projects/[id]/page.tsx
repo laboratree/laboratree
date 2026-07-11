@@ -35,6 +35,7 @@ const PipelineLab = dynamic(() => import("@/components/pipeline/PipelineLab"), {
 });
 const LlmActivity = dyn(() => import("@/components/LlmActivity"));
 const SpiderWebLab = dyn(() => import("@/components/SpiderWebLab"));
+const ArtifactStore = dyn(() => import("@/components/ArtifactStore"));
 const LearningLab = dyn(() => import("@/components/LearningLab"));
 
 type TabKey = LabTabKey;
@@ -177,6 +178,7 @@ export default function ProjectWorkspace() {
         {tab === "deliver" && <DeliverablesLab projectId={projectId} />}
         {tab === "pipeline" && <PipelineLab projectId={projectId} onOpenLab={setTab} />}
         {tab === "spiderweb" && <SpiderWebLab projectId={projectId} />}
+        {tab === "artifacts" && <ArtifactStore projectId={projectId} />}
         {tab === "llm" && <LlmActivity projectId={projectId} />}
       </div>
     </div>

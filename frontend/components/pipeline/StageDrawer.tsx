@@ -218,6 +218,16 @@ export default function StageDrawer({
               {JSON.stringify(stage.result.preview, null, 1).slice(0, 1000)}
             </pre>
           )}
+          {(() => {
+            const traceKey = (stage.result.preview as { trace_key?: string } | undefined)
+              ?.trace_key;
+            return traceKey ? (
+              <button onClick={() => void storageApi.open(traceKey)}
+                className="mt-2 text-[11px] font-bold text-[#6D28D9] hover:underline">
+                🧠 View the agent&apos;s full thought trace →
+              </button>
+            ) : null;
+          })()}
         </div>
       )}
 
@@ -245,11 +255,10 @@ export default function StageDrawer({
               <div className="mt-1">
                 <p className="text-[10px] text-muted">bucket ({bucketFiles.length} files):</p>
                 {bucketFiles.slice(0, 8).map((f) => (
-                  <a key={f.key} href={storageApi.downloadUrl(f.key)} target="_blank"
-                    rel="noreferrer"
-                    className="block truncate text-[11px] text-[#2563EB] hover:underline">
+                  <button key={f.key} onClick={() => void storageApi.open(f.key)}
+                    className="block w-full truncate text-left text-[11px] text-[#2563EB] hover:underline">
                     📄 {f.key.split("/").pop()} ({(f.size / 1024).toFixed(1)}kB)
-                  </a>
+                  </button>
                 ))}
               </div>
             )}

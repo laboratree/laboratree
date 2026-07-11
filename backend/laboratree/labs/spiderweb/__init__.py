@@ -37,7 +37,7 @@ from ...labs.agentic import llm as agentic_llm
 from ...projects.models import AgentRun, AgentRunStatus
 from . import robots
 from .discover import discover_seeds
-from .extract import extract_record
+from .extract import derive_schema, extract_record
 
 log = logging.getLogger(__name__)
 
@@ -120,9 +120,22 @@ async def run_mission(
                             "seeds": seeds}]
         await session.commit()
 
-    frontier: dict[str, Any] = {"spec": stored["spec"], "seeds": seeds}
+    # no schema given → derive extraction fields from the objective (an agent should know
+    # WHAT to collect, not just where); keyless → honest snapshot crawl
+    schema: dict[str, str] = dict(spec.target_schema) or dict(stored.get("derived_schema") or {})
+    if not schema and agentic_llm.is_configured():
+        schema = await asyncio.to_thread(derive_schema, spec.objective)
+        if schema:
+            agent_run.steps = [*agent_run.steps,
+                               {"kind": "note",
+                                "note": "derived extraction fields from the objective",
+                                "fields": schema}]
+            await session.commit()
+
+    frontier: dict[str, Any] = {"spec": stored["spec"], "seeds": seeds,
+                                "derived_schema": {} if spec.target_schema else schema}
     seed_domains = {_domain(u) for u in seeds}
-    extract_enabled = bool(spec.target_schema) and agentic_llm.is_configured()
+    extract_enabled = bool(schema) and agentic_llm.is_configured()
 
     engine = browser or get_browser()
     started = time.monotonic()
@@ -159,10 +172,10 @@ async def run_mission(
             text = await engine.page_text()
             record = None
             if extract_enabled and text:
-                record = await asyncio.to_thread(extract_record, spec.target_schema, text, url)
+                record = await asyncio.to_thread(extract_record, schema, text, url)
                 if record is not None:
                     digest = hashlib.sha256(json.dumps(
-                        {k: record[k] for k in spec.target_schema}, sort_keys=True,
+                        {k: record[k] for k in schema}, sort_keys=True,
                         default=str).encode()).hexdigest()[:24]
                     if digest in record_hashes:
                         record = None
@@ -170,18 +183,21 @@ async def run_mission(
                         record_hashes.add(digest)
                         records.append(record)
 
-            await _snapshot(session, agent_run, url, text, record, spec)
+            snapshot_key = await _snapshot(session, agent_run, url, text, record, schema)
 
+            queued = 0
             if depth < spec.max_depth:
                 links = _score_links(list(await engine.links()), spec.objective)
                 for link in links[:LINKS_PER_PAGE]:
                     href = canonical(link["href"])
                     if href not in visited and _in_scope(href, spec, seed_domains):
                         queue.append([href, depth + 1])
+                        queued += 1
 
             agent_run.steps = [*agent_run.steps,
                                {"kind": "page", "url": url, "depth": depth,
-                                "matched": record is not None, "items": len(records)}]
+                                "matched": record is not None, "items": len(records),
+                                "queued": queued, "snapshot_key": snapshot_key}]
             await _persist(session, agent_run, frontier, queue, visited, records, record_hashes)
     finally:
         try:
@@ -199,12 +215,13 @@ async def _persist(session, agent_run, frontier, queue, visited, records, record
     await session.commit()
 
 
-async def _snapshot(session, agent_run, url, text, record, spec) -> None:
+async def _snapshot(session, agent_run, url, text, record, schema) -> str:
+    """Archive the page + catalogue it; returns the blob key ("" on failure)."""
     key = f"spiderweb/{agent_run.id}/{hashlib.sha256(url.encode()).hexdigest()[:16]}.txt"
     try:
         get_blob_store().put(key, text.encode())
         description = (
-            f"Matched item: {json.dumps({k: record.get(k) for k in list(spec.target_schema)[:4]}, default=str)[:200]}"
+            f"Matched item: {json.dumps({k: record.get(k) for k in list(schema)[:4]}, default=str)[:200]}"
             if record else f"Page snapshot: {url[:150]}"
         )
         await note_blob(session, org_id=agent_run.org_id, project_id=agent_run.project_id,
@@ -212,6 +229,8 @@ async def _snapshot(session, agent_run, url, text, record, spec) -> None:
                         source=url)
     except Exception as exc:  # snapshots are best-effort
         log.debug("snapshot failed for %s: %s", url, exc)
+        return ""
+    return key
 
 
 async def _finish(session, agent_run, spec, seeds, records, visited, extract_enabled) -> None:
