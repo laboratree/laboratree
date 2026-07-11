@@ -15,7 +15,7 @@ import { buildFlowGraph } from "./layout";
 import { LaneNode } from "./LaneNode";
 import { StageNode } from "./StageNode";
 import StageDrawer from "./StageDrawer";
-import { isStageComplete, KIND_META, type StageState, type StepStatus } from "./types";
+import { isRunDriven, isStageComplete, KIND_META, type StageState, type StepStatus } from "./types";
 
 // Registered once at module scope — React Flow requires a stable nodeTypes reference.
 const nodeTypes: NodeTypes = { stage: StageNode, lane: LaneNode };
@@ -64,6 +64,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
   }
 
   function addStage(kind: FlowNodeKind) {
+    if (busy) return; // a run in flight maps results onto the current stages — freeze the flow
     const id = `n${Date.now()}`;
     const base = { id, phase: "custom", status: "idle" as StepStatus, markedDone: false };
     const stage: StageState = kind === "component"
@@ -83,6 +84,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
   }
 
   function removeStage(id: string) {
+    if (busy) return; // a run in flight maps results onto the current stages — freeze the flow
     setStages((all) => all.filter((s) => s.id !== id));
     if (selectedId === id) setSelectedId(null);
   }
@@ -143,16 +145,34 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
         setPhases(template.phases);
         // The seed genuinely activated the lab stages (published survey, persona wave,
         // hypothesis runs, shared report) — reflect that as completed with the artifact note.
+        // Run-driven stages the seeder executed surface as succeeded runs with provenance,
+        // not as idle cards that would silently re-run on ▶.
         setStages(template.stages.map((s) => {
           const artifact = seed.stages?.[s.id];
-          const activated = s.kind === "lab" && !!artifact;
+          const runId = typeof artifact?.run_id === "string" ? artifact.run_id : undefined;
+          const description = runId
+            ? `${s.description} (demo: Evidence-locked run recorded)`
+            : s.description;
+          if (runId && isRunDriven(s.kind)) {
+            return {
+              ...s,
+              status: "succeeded" as StepStatus,
+              markedDone: false,
+              result: {
+                component_id: s.componentId ?? s.id,
+                status: "succeeded",
+                run_id: runId,
+                evidence_count:
+                  typeof artifact?.evidence === "number" ? artifact.evidence : undefined,
+              },
+              description,
+            };
+          }
           return {
             ...s,
             status: "idle" as StepStatus,
-            markedDone: activated,
-            description: artifact && "run_id" in artifact && artifact.run_id
-              ? `${s.description} (demo: Evidence-locked run recorded)`
-              : s.description,
+            markedDone: s.kind === "lab" && !!artifact,
+            description,
           };
         }));
         setSelectedId(null);
@@ -173,7 +193,7 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
 
   const applySuperviseReport = useCallback((report: SuperviseReport) => {
     const byId = new Map(report.stages.map((r) => [r.id, r]));
-    const runDriven = (kind: string) => kind === "component" || kind === "agent";
+    const runDriven = isRunDriven;
     setStages((all) => all.map((s) => {
       const r = byId.get(s.id);
       if (!r) return { ...s, status: "idle" as StepStatus };
@@ -294,8 +314,9 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             <button
               key={t.key}
               onClick={() => loadTemplate(t.key)}
+              disabled={busy}
               title={t.tagline}
-              className={`rounded-full border px-3 py-1.5 text-sm transition ${
+              className={`rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50 ${
                 t.name === flowName
                   ? "border-forest bg-forest text-white"
                   : "border-leaf text-forest hover:bg-leaf/10"
@@ -316,27 +337,28 @@ export default function PipelineLab({ projectId, onOpenLab }: PipelineLabProps) 
             onClick={() => {
               setStages([]); setPhases([]); setFlowName("Blank canvas"); setSelectedId(null);
             }}
-            className="rounded-full border border-line px-3 py-1.5 text-sm text-ink/60 hover:bg-bg"
+            disabled={busy}
+            className="rounded-full border border-line px-3 py-1.5 text-sm text-ink/60 hover:bg-bg disabled:opacity-50"
           >
             Clear
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 px-5 py-3 text-sm">
-          <button onClick={() => addStage("component")}
-            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
+          <button onClick={() => addStage("component")} disabled={busy}
+            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg disabled:opacity-50">
             + ⚙️ Component
           </button>
-          <button onClick={() => addStage("lab")}
-            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
+          <button onClick={() => addStage("lab")} disabled={busy}
+            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg disabled:opacity-50">
             + 🧪 Lab stage
           </button>
-          <button onClick={() => addStage("agent")}
-            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
+          <button onClick={() => addStage("agent")} disabled={busy}
+            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg disabled:opacity-50">
             + 🤖 Agent stage
           </button>
-          <button onClick={() => addStage("manual")}
-            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg">
+          <button onClick={() => addStage("manual")} disabled={busy}
+            className="rounded-lg border border-line px-3 py-1.5 text-forest hover:bg-bg disabled:opacity-50">
             + 👤 Manual stage
           </button>
           <span className="mx-2 h-5 w-px bg-line" />

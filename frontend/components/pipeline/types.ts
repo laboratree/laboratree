@@ -72,6 +72,7 @@ const STATUS_META: Record<StepStatus, { label: string; className: string }> = {
 
 // component + agent stages are run-driven; lab/manual completion belongs to the user
 const RUN_DRIVEN: ReadonlySet<string> = new Set(["component", "agent"]);
+export const isRunDriven = (kind: string): boolean => RUN_DRIVEN.has(kind);
 
 export function stageStatusMeta(s: StageState): { label: string; className: string } {
   if (!RUN_DRIVEN.has(s.kind)) {
