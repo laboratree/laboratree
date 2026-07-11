@@ -107,7 +107,7 @@ services:
 
   web:
     build:
-      context: ../apps/web
+      context: ../frontend
       dockerfile: Dockerfile
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8000}

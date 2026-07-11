@@ -1,6 +1,6 @@
 ---
 name: clean-code
-description: The clean-code and clean-architecture standards for Laboratree. Consult and apply whenever writing, modifying, or refactoring any code in this repo (Python backend in apps/api, TypeScript/React frontend in apps/web, plugin-SDK). Covers naming, single-responsibility, DRY/KISS, typed data models over raw dicts, layer separation (routes/services/prompts/schemas/models/utils), error handling, and the pre-completion review checklist.
+description: The clean-code and clean-architecture standards for Laboratree. Consult and apply whenever writing, modifying, or refactoring any code in this repo (Python backend in backend, TypeScript/React frontend in frontend, plugin-SDK). Covers naming, single-responsibility, DRY/KISS, typed data models over raw dicts, layer separation (routes/services/prompts/schemas/models/utils), error handling, and the pre-completion review checklist.
 ---
 
 # Clean code — Laboratree standards
@@ -17,7 +17,7 @@ cleaner than you found it (principle: refactor continuously).
    service holds business logic; a Component's `run` does the work; a prompt module holds the prompt.
 3. **Small, focused functions.** If a function needs a comment to explain a *section*, that section is a
    function. Extract; don't scroll.
-4. **DRY.** Shared logic goes to `core/` (backend) or `apps/web/lib` / a shared component (frontend).
+4. **DRY.** Shared logic goes to `core/` (backend) or `frontend/lib` / a shared component (frontend).
    Never copy a helper between Labs — Labs share only through `core/` and `plugin-sdk`.
 5. **KISS / YAGNI.** Simplest thing that works. No speculative abstraction, no config knob nobody asked
    for. Reuse mature libraries (sklearn/statsmodels/PyTorch/…); agents orchestrate, they don't reimplement.
@@ -28,13 +28,13 @@ cleaner than you found it (principle: refactor continuously).
 8. **Shallow control flow.** Guard clauses + early returns over nested `if/else`. Validate-and-return-early
    at the top of the function.
 9. **Separation of concerns — the layers.** Keep these in their own modules; do not mix them:
-   - **routes** → `apps/api/laboratree/api/<lab>.py` (FastAPI routers: parse request, call a service, shape response — no business logic).
+   - **routes** → `backend/laboratree/api/<lab>.py` (FastAPI routers: parse request, call a service, shape response — no business logic).
    - **services / business logic** → the Lab package `labs/<lab>/…` (or `core/` if cross-cutting).
    - **models / data shapes** → `models.py` (SQLAlchemy) and Pydantic/dataclass DTOs.
    - **schemas** → JSON-Schema in `ComponentSpec.params_schema`; Pydantic request/response models for APIs.
    - **prompts** → keep LLM prompt text in a dedicated module/constant, not inline in orchestration logic.
    - **utils** → `core/` shared helpers. **config** → `core/settings`.
-   Frontend mirror: API calls in `apps/web/lib/api.ts`, UI in `components/`, pages in `app/`.
+   Frontend mirror: API calls in `frontend/lib/api.ts`, UI in `components/`, pages in `app/`.
 10. **Exception handling.** Handle expected failures explicitly with actionable messages (see the
     `readiness_reason` pattern). Catch the **narrowest** exception you can handle — not bare `except Exception`
     except at a top-level boundary (router, Celery task) that logs and converts it. Raise typed `HTTPException`s
@@ -84,7 +84,7 @@ Before considering a change complete, verify:
       caught exception (with context); correct levels; no secrets/keys/PII logged.
 - [ ] Dead code, unused imports, and commented-out blocks removed.
 - [ ] Every reported number flows through `ctx.emit` (provenance).
-- [ ] Tests updated/added; `cd apps/api && uv run pytest` green; `uv run ruff check` clean.
-- [ ] Frontend: `cd apps/web && npx tsc --noEmit` clean. **Never** `npm run build` while `npm run dev` is live.
+- [ ] Tests updated/added; `cd backend && uv run pytest` green; `uv run ruff check` clean.
+- [ ] Frontend: `cd frontend && npx tsc --noEmit` clean. **Never** `npm run build` while `npm run dev` is live.
 
 If any box fails, refactor before finishing — don't ship it and note it as a TODO.

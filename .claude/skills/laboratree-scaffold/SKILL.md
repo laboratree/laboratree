@@ -1,6 +1,6 @@
 ---
 name: laboratree-scaffold
-description: Scaffold a new Laboratree Lab or Component from the plugin-SDK template. Use when the user wants to add a capability (transform, model, chart, evaluator, connector, analyzer, decision, report_block) or a whole new Lab under apps/api/laboratree/labs. Keeps the plug-in/plug-out pattern consistent.
+description: Scaffold a new Laboratree Lab or Component from the plugin-SDK template. Use when the user wants to add a capability (transform, model, chart, evaluator, connector, analyzer, decision, report_block) or a whole new Lab under backend/laboratree/labs. Keeps the plug-in/plug-out pattern consistent.
 ---
 
 # Laboratree scaffold
@@ -11,7 +11,7 @@ frontend forms, so **no UI code is needed** for a new component.
 
 ## Add a Component to an existing Lab
 
-1. Pick the Lab package: `apps/api/laboratree/labs/<lab>/`.
+1. Pick the Lab package: `backend/laboratree/labs/<lab>/`.
 2. Create (or extend) a module and add a `Component` subclass with a class-level `spec`.
 3. It is auto-discovered on startup — no registration list to edit.
 
@@ -58,15 +58,15 @@ Rules:
 
 ## Add a new Lab
 
-1. `apps/api/laboratree/labs/<lab>/__init__.py` with a one-line docstring.
+1. `backend/laboratree/labs/<lab>/__init__.py` with a one-line docstring.
 2. Add components as above. (Discovery walks all `laboratree.labs.*` packages.)
-3. If the Lab needs endpoints, add a router in `apps/api/laboratree/api/<lab>.py` and include it in
+3. If the Lab needs endpoints, add a router in `backend/laboratree/api/<lab>.py` and include it in
    `main.py`. If it needs an agent team, add a LangGraph graph under `laboratree/agents/`.
-4. Add a page under `apps/web/app/<lab>/` and a card on the home Labs grid.
+4. Add a page under `frontend/app/<lab>/` and a card on the home Labs grid.
 
 ## Verify
 
 ```bash
-cd apps/api && uv run python -c "from laboratree.core.registry import discover, REGISTRY; discover(); print(REGISTRY.ids())"
+cd backend && uv run python -c "from laboratree.core.registry import discover, REGISTRY; discover(); print(REGISTRY.ids())"
 ```
 The new component id should appear, and `GET /api/components` should list it.

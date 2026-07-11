@@ -3,7 +3,7 @@
 Returns an ordered fallback chain, finest first: ``["xgboost", "trees"]``, ``["lstm", "rnn",
 "nn"]``. The lesson registry picks the first key with a hand-written script; the tracer picks
 the first key that is a registered viz family. Mirrors (and refines) the frontend
-``modelKind()`` in ``apps/web/components/ModelAnimation.tsx`` — most specific cues first.
+``modelKind()`` in ``frontend/components/ModelAnimation.tsx`` — most specific cues first.
 """
 
 from __future__ import annotations

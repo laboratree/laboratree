@@ -6,8 +6,8 @@ set -uo pipefail
 
 root="$(git rev-parse --show-toplevel)"
 
-echo "[pre-push] pytest (apps/api)…"
-if ( cd "$root/apps/api" && uv run pytest -q ); then
+echo "[pre-push] pytest (backend)…"
+if ( cd "$root/backend" && uv run pytest -q ); then
   echo "✓ pre-push checks passed."
 else
   echo

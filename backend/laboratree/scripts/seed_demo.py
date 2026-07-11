@@ -1,6 +1,6 @@
 """Seed a demo organization with one user per role.
 
-Run:  cd apps/api && uv run python -m laboratree.scripts.seed_demo
+Run:  cd backend && uv run python -m laboratree.scripts.seed_demo
 (honours POSTGRES_PORT etc. from the environment / .env)
 
 Demo credentials (password is the same for all): demo12345

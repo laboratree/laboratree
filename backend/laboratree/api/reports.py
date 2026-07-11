@@ -23,7 +23,7 @@ HTML_MIME = "text/html"
 
 
 def _logo_b64() -> str | None:
-    for candidate in ("apps/web/public/logo.png", "logo/IMG_5652.PNG", "logo/logo.PNG"):
+    for candidate in ("frontend/public/logo.png", "logo/IMG_5652.PNG", "logo/logo.PNG"):
         path = REPO_ROOT / candidate
         if path.exists():
             try:

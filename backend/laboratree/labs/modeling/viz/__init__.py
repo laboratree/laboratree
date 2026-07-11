@@ -2,7 +2,7 @@
 
 Each module here teaches ONE family by fitting a small stand-in model on the REAL data and
 returning a staged trace: the data table -> a training view -> a per-row testing walkthrough.
-The frontend mirror lives in ``apps/web/components/model-viz/`` (same family names).
+The frontend mirror lives in ``frontend/components/model-viz/`` (same family names).
 
 Plug IN a family: add ``<family>.py`` with ``@register_tracer("<family>")`` on a
 ``(X, y, feats, target, task, labels) -> ModelTrace`` function — discovery is automatic,

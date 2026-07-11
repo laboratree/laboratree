@@ -2,7 +2,7 @@
 # Members are the Python projects in the monorepo.
 
 [tool.uv.workspace]
-members = ["apps/api", "packages/plugin-sdk"]
+members = ["backend", "packages/plugin-sdk"]
 
 [tool.uv.sources]
 laboratree-plugin-sdk = { workspace = true }
@@ -26,4 +26,4 @@ extend-immutable-calls = [
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["apps/api/tests"]
+testpaths = ["backend/tests"]

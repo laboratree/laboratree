@@ -19,10 +19,10 @@ WORKDIR /app
 # Copy workspace sources (manifests + code) and resolve the environment.
 COPY pyproject.toml ./
 COPY packages ./packages
-COPY apps/api ./apps/api
+COPY backend ./backend
 
 RUN uv sync --no-dev
 
-WORKDIR /app/apps/api
+WORKDIR /app/backend
 EXPOSE 8000
 CMD ["uv", "run", "uvicorn", "laboratree.main:app", "--host", "0.0.0.0", "--port", "8000"]

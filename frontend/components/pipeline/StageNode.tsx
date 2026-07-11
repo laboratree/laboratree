@@ -60,7 +60,9 @@ function StageNodeComponent({ data }: NodeProps<StageFlowNode>) {
             ? `🧪 ${labTabLabel(stage.labTab)} ↗`
             : stage.kind === "component" && stage.result?.evidence_count != null
               ? `⚙ RUN · 🔒 ${stage.result.evidence_count}`
-              : kind.badge}
+              : stage.kind === "agent" && stage.result?.evidence_count != null
+                ? `🤖 AGENT · 🔒 ${stage.result.evidence_count}`
+                : kind.badge}
         </span>
         <span className={`font-bold ${status.className}`}>{status.label}</span>
       </div>

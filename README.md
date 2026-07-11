@@ -17,8 +17,8 @@ See the foundation plan for the full architecture and rationale.
 ## Monorepo
 
 ```
-apps/api          FastAPI backend (uv workspace member)
-apps/web          Next.js frontend
+backend          FastAPI backend (uv workspace member)
+frontend          Next.js frontend
 packages/plugin-sdk   Component / registry contracts (uv workspace member)
 infra             docker-compose + Dockerfiles
 data              local BlobStore volume (gitignored)
@@ -40,12 +40,12 @@ cp .env.example .env            # then fill in OPENAI_API_KEY
 docker compose -f infra/docker-compose.yml up -d
 
 # 2. Backend (local, without Docker) — uses uv
-cd apps/api
+cd backend
 uv sync                          # creates .venv, installs workspace deps
 uv run uvicorn laboratree.main:app --reload
 
 # 3. Frontend
-cd apps/web
+cd frontend
 npm install && npm run dev
 ```
 

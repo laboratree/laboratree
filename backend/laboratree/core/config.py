@@ -11,8 +11,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# repo root = .../apps/api/laboratree/core/config.py -> parents[4]
-REPO_ROOT = Path(__file__).resolve().parents[4]
+# repo root = .../backend/laboratree/core/config.py -> parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):

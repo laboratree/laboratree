@@ -10,9 +10,9 @@ results** (Evidence Ledger), **leakage detection + reproducibility**, **Co-Scien
 **adversarial red-team critic**. Orchestrated with **LangGraph** + human-in-the-loop gates.
 
 ## Monorepo & tooling
-- **uv workspace** (root `pyproject.toml`). Members: `apps/api`, `packages/plugin-sdk`.
+- **uv workspace** (root `pyproject.toml`). Members: `backend`, `packages/plugin-sdk`.
   - `uv sync` — install everything. `uv run <cmd>` — run in the env. Python pinned to **3.12**.
-- `apps/api` — FastAPI backend. `apps/web` — Next.js (npm). `infra/` — docker-compose + Dockerfiles.
+- `backend` — FastAPI backend. `frontend` — Next.js (npm). `infra/` — docker-compose + Dockerfiles.
 - Datastores are **polyglot, one container each**: Postgres(+pgvector), Redis, Neo4j, MongoDB.
   Blobs → local volume behind `core/storage` `BlobStore` (swap to S3 later).
 - LLM via `core/llm` `LLMClient` — **Azure OpenAI** (v1 route) or plain OpenAI, chosen by
@@ -21,8 +21,8 @@ results** (Evidence Ledger), **leakage detection + reproducibility**, **Co-Scien
 ## Run it
 ```bash
 docker compose -f infra/docker-compose.yml up -d        # datastores + services
-cd apps/api && uv run uvicorn laboratree.main:app --reload   # or run api locally
-cd apps/web && npm install && npm run dev
+cd backend && uv run uvicorn laboratree.main:app --reload   # or run api locally
+cd frontend && npm install && npm run dev
 ```
 Check `http://localhost:8000/health` (all stores) and `/api/components` (the registry).
 
@@ -46,10 +46,10 @@ To scaffold a new Lab/Component, use the **`laboratree-scaffold`** skill in `.cl
 - Curated (registered) components run in-process; the Modeling R&D loop writes/runs code in the
   **Docker sandbox** (`infra/sandbox.Dockerfile`) with no network + resource limits.
 - Async everywhere in the API. Long/heavy work goes to Celery (`core/jobs`).
-- Theme = **light forest** (see `apps/web/tailwind.config.ts`): forest `#14342A`, leaf `#6DB33F`,
+- Theme = **light forest** (see `frontend/tailwind.config.ts`): forest `#14342A`, leaf `#6DB33F`,
   bg `#FBFDF9`. Serif display (Lora) + Inter. Brand reports with the logo + tagline.
 - **Clean code:** follow the **`clean-code`** skill in `.claude/skills/` for every code change (naming,
   single-responsibility, typed models over raw dicts, layer separation, error handling, pre-completion review).
 
 ## Tests
-`uv run pytest` (tests live in `apps/api/tests`).
+`uv run pytest` (tests live in `backend/tests`).

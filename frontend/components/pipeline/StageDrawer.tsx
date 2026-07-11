@@ -178,33 +178,33 @@ export default function StageDrawer({
             }`}
           />
           {paramsError && <p className="text-xs text-red-600">{paramsError}</p>}
+        </div>
+      )}
 
-          {stage.result && (
-            <div className="rounded-lg bg-bg p-2">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    stage.status === "succeeded"
-                      ? "bg-leaf/20 text-forest"
-                      : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  {stage.status}
-                  {stage.result.evidence_count != null
-                    ? ` · 🔒 ${stage.result.evidence_count} evidence`
-                    : ""}
-                </span>
-                {stage.result.run_id && <ProvenanceBadge runId={stage.result.run_id} />}
-              </div>
-              {stage.result.error && (
-                <p className="mt-1 text-xs text-red-600">{stage.result.error}</p>
-              )}
-              {stage.result.preview != null && (
-                <pre className="mt-2 max-h-40 overflow-auto text-[10px] text-ink">
-                  {JSON.stringify(stage.result.preview, null, 1).slice(0, 1000)}
-                </pre>
-              )}
-            </div>
+      {(stage.kind === "component" || stage.kind === "agent") && stage.result && (
+        <div className="mt-3 rounded-lg bg-bg p-2">
+          <div className="flex items-center gap-2">
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs ${
+                stage.status === "succeeded"
+                  ? "bg-leaf/20 text-forest"
+                  : "bg-red-100 text-red-700"
+              }`}
+            >
+              {stage.kind === "agent" ? "🤖 " : ""}{stage.status}
+              {stage.result.evidence_count != null
+                ? ` · 🔒 ${stage.result.evidence_count} evidence`
+                : ""}
+            </span>
+            {stage.result.run_id && <ProvenanceBadge runId={stage.result.run_id} />}
+          </div>
+          {stage.result.error && (
+            <p className="mt-1 text-xs text-red-600">{stage.result.error}</p>
+          )}
+          {stage.result.preview != null && (
+            <pre className="mt-2 max-h-40 overflow-auto text-[10px] text-ink">
+              {JSON.stringify(stage.result.preview, null, 1).slice(0, 1000)}
+            </pre>
           )}
         </div>
       )}
