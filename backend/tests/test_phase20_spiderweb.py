@@ -381,10 +381,10 @@ def test_paper_mission_archives_original_pdf_documents(monkeypatch):
         assert blob.headers["content-type"] == "application/pdf"
         assert "inline" in blob.headers.get("content-disposition", "")
 
-        # the Artifact Store lists them under the spiderweb lab as pdf artifacts
+        # the Artifact Store lists them under the spiderweb mission as pdf artifacts
         store = client.get(f"/api/projects/{project_id}/artifact-store?lab=spiderweb",
                            headers=headers).json()
-        assert any(e["kind"] == "pdf" for e in store)
+        assert any(a["kind"] == "pdf" for g in store["groups"] for a in g["artifacts"])
 
 
 def test_mission_without_seeds_and_no_search_fails_honestly(monkeypatch):

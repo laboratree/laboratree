@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from ..cache import memoize_ttl
 from ..config import settings
@@ -29,6 +30,18 @@ class SearchHit:
     url: str
     description: str = ""
     source: str = ""  # which provider returned it
+    citations: int = 0  # citation count when the provider reports it (impact ranking)
+
+
+# a query asking for the canon → rank scholarly results by citation impact, not just relevance
+_SEMINAL_MARKERS = ("seminal", "foundational", "classic", "canonical", "highly cited",
+                    "most cited", "influential", "landmark", "cornerstone", "key papers",
+                    "important papers", "well known", "well-known")
+
+
+def _wants_seminal(query: str) -> bool:
+    low = query.lower()
+    return any(m in low for m in _SEMINAL_MARKERS)
 
 
 def _brave(query: str, count: int) -> list[SearchHit]:
@@ -143,18 +156,23 @@ def _openalex_abstract(inv: dict | None) -> str:
     return " ".join(positions[i] for i in sorted(positions))[:600]
 
 
-def openalex_search(query: str, count: int) -> list[SearchHit]:
+def openalex_search(query: str, count: int, *, sort_by_citations: bool = False) -> list[SearchHit]:
     """Search OpenAlex (openalex.org) — a free, keyless scholarly graph spanning ALL disciplines
-    (incl. social science), with abstracts. The strongest evidence source for the deep agent."""
+    (incl. social science), with abstracts. The strongest evidence source for the deep agent.
+
+    ``sort_by_citations`` ranks by ``cited_by_count`` so "seminal/foundational" queries surface
+    the canon (most-cited works) instead of diffuse recent matches."""
     import httpx
 
     try:
         mailto = settings.openalex_mailto or "hello@laboratree.dev"  # OpenAlex "polite pool"
-        resp = httpx.get(
-            "https://api.openalex.org/works",
-            params={"search": query, "per_page": min(count, 25), "mailto": mailto},
-            headers={"User-Agent": _USER_AGENT}, timeout=_TIMEOUT,
-        )
+        params: dict[str, Any] = {"search": query, "per_page": min(count, 25), "mailto": mailto,
+                                  "select": "id,doi,title,publication_year,cited_by_count,"
+                                            "primary_location,abstract_inverted_index"}
+        if sort_by_citations:
+            params["sort"] = "cited_by_count:desc"
+        resp = httpx.get("https://api.openalex.org/works", params=params,
+                         headers={"User-Agent": _USER_AGENT}, timeout=_TIMEOUT)
         if resp.status_code != 200:
             log.info("openalex HTTP %s for %r", resp.status_code, query)
             return []
@@ -165,13 +183,15 @@ def openalex_search(query: str, count: int) -> list[SearchHit]:
             if not (title and url):
                 continue
             year = r.get("publication_year")
+            citations = int(r.get("cited_by_count") or 0)
             venue = ((r.get("primary_location") or {}).get("source") or {}).get("display_name") or ""
             abstract = _openalex_abstract(r.get("abstract_inverted_index"))
-            meta = " · ".join(x for x in [str(year) if year else "", venue] if x)
+            cite_note = f"cited {citations:,}×" if citations else ""
+            meta = " · ".join(x for x in [str(year) if year else "", venue, cite_note] if x)
             hits.append(SearchHit(
                 title=title, url=url,
                 description=(f"{meta}. {abstract}" if meta else abstract) or venue,
-                source="openalex",
+                source="openalex", citations=citations,
             ))
         return hits[:count]
     except Exception as exc:
@@ -194,7 +214,7 @@ def semantic_scholar_search(query: str, count: int) -> list[SearchHit]:
         resp = httpx.get(
             "https://api.semanticscholar.org/graph/v1/paper/search",
             params={"query": query, "limit": min(count, 20),
-                    "fields": "title,abstract,year,venue,externalIds,tldr,url"},
+                    "fields": "title,abstract,year,venue,externalIds,tldr,url,citationCount"},
             headers=headers, timeout=_TIMEOUT,
         )
         if resp.status_code != 200:  # 429 (rate limit) etc. — never fatal
@@ -209,11 +229,13 @@ def semantic_scholar_search(query: str, count: int) -> list[SearchHit]:
                 continue
             tldr = (r.get("tldr") or {}).get("text") or ""
             body = tldr or (r.get("abstract") or "")
-            meta = " · ".join(str(x) for x in [r.get("year"), r.get("venue")] if x)
+            citations = int(r.get("citationCount") or 0)
+            cite_note = f"cited {citations:,}×" if citations else ""
+            meta = " · ".join(str(x) for x in [r.get("year"), r.get("venue"), cite_note] if x)
             hits.append(SearchHit(
                 title=title, url=url,
                 description=(f"{meta}. {body}" if meta else body)[:600] or (r.get("venue") or ""),
-                source="semantic_scholar",
+                source="semantic_scholar", citations=citations,
             ))
         return hits[:count]
     except Exception as exc:
@@ -307,14 +329,28 @@ def research_search(query: str, count: int | None = None) -> list[SearchHit]:
     arXiv — all keyless), then the open web (Brave→SerpAPI) to fill in. Deduped by DOI. Works even
     with NO web key, since the scholarly sources need none."""
     n = count or settings.web_search_max_results
+    seminal = _wants_seminal(query)
     hits: list[SearchHit] = []
     seen: set[str] = set()
-    # scholarly sources first (papers), then web to fill any gap
-    for provider in (openalex_search, semantic_scholar_search, arxiv_search,
-                     lambda q, c: web_search(q, c)):
-        if len(hits) >= n:
-            break
-        for h in provider(query, n):
+
+    # scholarly sources first (papers), then web to fill any gap. For a "seminal" ask, pull a
+    # WIDER relevance-ranked pool so we can re-rank the topically-relevant candidates by citation
+    # impact (keeps topicality — API-level citation sort would globalise and lose relevance).
+    scholarly_n = n * 3 if seminal else n
+    for provider in (openalex_search, semantic_scholar_search, arxiv_search):
+        for h in provider(query, scholarly_n):
+            key = _doi_key(h.url)
+            if key and key not in seen:
+                hits.append(h)
+                seen.add(key)
+
+    if seminal:
+        # stable sort by citations: most-cited among the relevant candidates float to the top,
+        # ties keep their (relevance) order
+        hits.sort(key=lambda h: h.citations, reverse=True)
+
+    if len(hits) < n:  # top up from the open web only if scholarly under-delivered
+        for h in web_search(query, n):
             key = _doi_key(h.url)
             if key and key not in seen:
                 hits.append(h)

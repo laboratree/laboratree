@@ -36,8 +36,10 @@ def _meta_plan_system(tool_catalog: str, experience_digest: str) -> str:
     experience = f"\n{experience_digest}\n" if experience_digest else ""
     return (
         "You are the meta-planner of a research platform. Decompose the goal into 2-5 small, "
-        "delegable tasks for specialist sub-agents (research: external evidence; coding: "
-        "components/sandbox; analysis: the project's own data via SQL/Cypher/components).\n"
+        "delegable tasks for specialist sub-agents (research: discover AND read external "
+        "evidence/papers; coding: components/sandbox; analysis: the project's OWN datasets via "
+        "SQL/Cypher/components). Reading and extracting from papers is a 'research' task — use "
+        "'analysis' only when the task works a dataset the project already holds.\n"
         f"{experience}\n"
         f"AVAILABLE TOOLS:\n{tool_catalog}\n\n"
         'Respond ONLY as JSON: {"tasks": [{"objective": "<one focused sub-goal>", '

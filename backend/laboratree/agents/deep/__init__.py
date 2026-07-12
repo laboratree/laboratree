@@ -49,7 +49,7 @@ from .react import MAX_STEPS, OnStep, ReactResult, ToolRunner, react_loop
 
 log = logging.getLogger(__name__)
 
-SUB_AGENT_STEPS = 4
+SUB_AGENT_STEPS = 6      # room to search AND read 1-2 sources before concluding (not just search)
 REFINE_STEPS = SUB_AGENT_STEPS // 2          # half budgets for the revision round (hard law)
 # tools whose args survive a JSON round-trip (bytes-taking tools stay out of ReAct loops)
 JSON_SAFE_TOOLS = frozenset({
