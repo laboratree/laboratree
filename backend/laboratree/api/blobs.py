@@ -136,6 +136,14 @@ async def download_blob(
     if len(body) > MAX_DOWNLOAD_BYTES:
         raise HTTPException(status_code=413, detail="blob too large for download")
     filename = key.rsplit("/", 1)[-1]
-    media = "application/json" if filename.endswith(".json") else "text/plain"
+    media = _MEDIA_BY_EXT.get("." + filename.rsplit(".", 1)[-1].lower(), "text/plain")
+    # PDFs render inline (the user wants to READ the paper); the rest download
+    disposition = "inline" if media == "application/pdf" else "attachment"
     return Response(content=body, media_type=media, headers={
-        "Content-Disposition": f'attachment; filename="{filename}"'})
+        "Content-Disposition": f'{disposition}; filename="{filename}"'})
+
+
+_MEDIA_BY_EXT = {
+    ".json": "application/json", ".pdf": "application/pdf", ".html": "text/html",
+    ".csv": "text/csv", ".txt": "text/plain",
+}

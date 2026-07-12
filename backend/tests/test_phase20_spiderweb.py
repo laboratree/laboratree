@@ -81,6 +81,68 @@ def _extractor(schema, text, url):
     return {"title": title, "salary": salary, "source_url": url}
 
 
+# a scripted "papers" site: a listing links to two PDF papers served as %PDF bytes
+PAPER_SITE: dict[str, dict] = {
+    "https://papers.example.org/": {
+        "text": "Working papers on women empowerment",
+        "links": [("Empowerment and growth (PDF)", "https://papers.example.org/p1.pdf"),
+                  ("Microfinance model (PDF)", "https://papers.example.org/p2.pdf")],
+        "bytes": None,
+    },
+    "https://papers.example.org/p1.pdf": {
+        "text": "Women Empowerment and Economic Growth. Authors: A. Sen. Year 2019.",
+        "links": [], "bytes": b"%PDF-1.5\nfake-paper-one-bytes\n%%EOF",
+    },
+    "https://papers.example.org/p2.pdf": {
+        "text": "A Microfinance Model of Empowerment. Authors: E. Duflo. Year 2012.",
+        "links": [], "bytes": b"%PDF-1.5\nfake-paper-two-bytes\n%%EOF",
+    },
+}
+
+
+class FakePdfBrowser:
+    def __init__(self):
+        self.url = ""
+        self.opened: list[str] = []
+
+    async def open(self, url: str) -> bool:
+        base = url.split("#")[0]
+        if base in PAPER_SITE:
+            self.url = base
+            self.opened.append(base)
+            return True
+        return False
+
+    async def page_text(self) -> str:
+        return PAPER_SITE[self.url]["text"]
+
+    async def page_bytes(self) -> bytes | None:
+        return PAPER_SITE[self.url]["bytes"]
+
+    async def links(self) -> list[LinkInfo]:
+        return [LinkInfo(id=i, text=t, href=h)
+                for i, (t, h) in enumerate(PAPER_SITE[self.url]["links"])]
+
+    async def click(self, link_id: int) -> bool:  # pragma: no cover
+        return False
+
+    async def back(self) -> bool:  # pragma: no cover
+        return False
+
+    def current_url(self) -> str:
+        return self.url
+
+    async def close(self) -> None:
+        pass
+
+
+def _paper_extractor(schema, text, url):
+    if "Authors:" not in text:
+        return None
+    return {"title": text.split(".")[0], "authors": text.split("Authors: ")[1].split(".")[0],
+            "url": url, "source_url": url}
+
+
 @pytest.fixture(autouse=True)
 def _keyed(monkeypatch):
     from laboratree.core.config import settings
@@ -282,6 +344,47 @@ def test_pdf_bodies_read_as_text_not_bytes():
 
     assert pdf_to_text(b"<html><body>hi</body></html>") == ""   # not a PDF
     assert pdf_to_text(b"%PDF-1.7 garbage that will not parse") == ""  # fail-soft
+
+
+def test_paper_mission_archives_original_pdf_documents(monkeypatch):
+    import laboratree.labs.spiderweb as sw
+
+    monkeypatch.setattr(sw, "extract_record", _paper_extractor)
+    monkeypatch.setattr(sw.robots, "allowed", lambda url: True)
+    monkeypatch.setattr(sw, "POLITENESS_S", 0.0)
+    monkeypatch.setattr(sw, "get_browser", lambda: FakePdfBrowser())
+
+    with TestClient(app) as client:
+        headers, project_id = _setup(client)
+        mission = client.post(
+            f"/api/projects/{project_id}/spiderweb/missions",
+            json={"objective": "find all the papers on women empowerment using an economic model",
+                  "seed_urls": ["https://papers.example.org/"],
+                  "target_schema": {"title": "t", "authors": "a", "url": "u"},
+                  "max_pages": 6, "max_depth": 1},
+            headers=headers).json()
+        run = client.get(f"/api/projects/{project_id}/agent-runs/{mission['agent_run_id']}",
+                         headers=headers).json()
+        assert run["status"] == "succeeded"
+        assert "PDF document(s) archived" in run["summary"]
+
+        # every record carries a downloadable ORIGINAL pdf, not extracted text
+        records = run["records"]
+        assert len(records) == 2
+        pdf_keys = [r.get("archived_pdf") for r in records]
+        assert all(k and k.endswith(".pdf") for k in pdf_keys)
+
+        # the download serves the real PDF bytes as application/pdf, inline
+        blob = client.get(f"/api/blobs/download?key={pdf_keys[0]}", headers=headers)
+        assert blob.status_code == 200
+        assert blob.content.startswith(b"%PDF")
+        assert blob.headers["content-type"] == "application/pdf"
+        assert "inline" in blob.headers.get("content-disposition", "")
+
+        # the Artifact Store lists them under the spiderweb lab as pdf artifacts
+        store = client.get(f"/api/projects/{project_id}/artifact-store?lab=spiderweb",
+                           headers=headers).json()
+        assert any(e["kind"] == "pdf" for e in store)
 
 
 def test_mission_without_seeds_and_no_search_fails_honestly(monkeypatch):

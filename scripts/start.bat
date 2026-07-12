@@ -6,8 +6,13 @@ REM  Each service opens in its own window; close a window to stop that service.
 REM ============================================================================
 setlocal
 
-REM API port (matches apps\web\.env.local NEXT_PUBLIC_API_URL). Change here if 8000 is taken.
+REM API port (matches frontend\.env.local NEXT_PUBLIC_API_URL). Change here if 8000 is taken.
 set "API_PORT=8000"
+
+REM Non-default datastore ports (the app's stores, not the machine defaults) so the backend
+REM connects to the compose containers below.
+set "POSTGRES_PORT=5433"
+set "MONGO_PORT=27018"
 
 REM Repo root = the folder that contains this scripts\ folder.
 set "ROOT=%~dp0.."
@@ -32,10 +37,10 @@ if errorlevel 1 (
 )
 
 echo [2/3] Starting backend (FastAPI, --reload)...
-start "Laboratree API" /d "%ROOT%\apps\api" cmd /k uv run uvicorn laboratree.main:app --reload --port %API_PORT%
+start "Laboratree API" /d "%ROOT%\backend" cmd /k uv run uvicorn laboratree.main:app --reload --port %API_PORT%
 
 echo [3/3] Starting frontend (Next.js dev)...
-start "Laboratree Web" /d "%ROOT%\apps\web" cmd /k npm run dev
+start "Laboratree Web" /d "%ROOT%\frontend" cmd /k npm run dev
 
 echo.
 echo   Two windows opened (API + Web). Give them ~15s, then open:

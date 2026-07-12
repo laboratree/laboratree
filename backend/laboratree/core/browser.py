@@ -60,6 +60,10 @@ class HttpBrowser:
             return await asyncio.to_thread(pdf_to_text, self._body)
         return html_to_text(self._body)
 
+    async def page_bytes(self) -> bytes | None:
+        """Raw body — lets callers archive originals (PDFs) instead of extracted text."""
+        return self._body or None
+
     async def links(self) -> list[LinkInfo]:
         if self._body.lstrip()[:5].startswith(b"%PDF"):
             return []                                   # PDFs are leaves, no links to walk
@@ -133,6 +137,14 @@ class PlaywrightBrowser:
             return " ".join(text.split())[:40_000]
         except Exception:
             return ""
+
+    async def page_bytes(self) -> bytes | None:
+        """Original document bytes for archiving — only fetched for direct-file pages."""
+        if self.current_url().split("?")[0].lower().endswith(".pdf"):
+            import asyncio
+
+            return await asyncio.to_thread(safe_fetch, self.current_url())
+        return None
 
     async def links(self) -> list[LinkInfo]:
         try:

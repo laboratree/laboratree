@@ -201,15 +201,25 @@ export default function SpiderWebLab({ projectId }: { projectId: string }) {
             <div className="mt-3 max-h-56 overflow-y-auto">
               {records.map((r, i) => (
                 <div key={i} className="mb-2 rounded-lg border border-[#1E293B] bg-[#0F1A2E] p-2">
-                  {Object.entries(r).filter(([k]) => k !== "source_url").map(([k, v]) => (
-                    <p key={k} className="text-[11px] text-slate-200">
-                      <span className="text-slate-500">{k}:</span> {String(v ?? "—")}
-                    </p>
-                  ))}
-                  <a href={String(r.source_url ?? "#")} target="_blank" rel="noreferrer"
-                    className="text-[10px] text-[#22D3EE] hover:underline">
-                    {String(r.source_url ?? "")}
-                  </a>
+                  {Object.entries(r)
+                    .filter(([k]) => k !== "source_url" && k !== "archived_pdf")
+                    .map(([k, v]) => (
+                      <p key={k} className="text-[11px] text-slate-200">
+                        <span className="text-slate-500">{k}:</span> {String(v ?? "—")}
+                      </p>
+                    ))}
+                  <div className="mt-1 flex items-center gap-2">
+                    {typeof r.archived_pdf === "string" && r.archived_pdf && (
+                      <button onClick={() => void storageApi.open(r.archived_pdf as string)}
+                        className="rounded-full bg-[#22D3EE]/15 px-2 py-0.5 text-[10px] font-bold text-[#22D3EE] hover:bg-[#22D3EE]/30">
+                        📕 open PDF
+                      </button>
+                    )}
+                    <a href={String(r.source_url ?? "#")} target="_blank" rel="noreferrer"
+                      className="truncate text-[10px] text-[#22D3EE] hover:underline">
+                      {String(r.source_url ?? "")}
+                    </a>
+                  </div>
                 </div>
               ))}
               {records.length === 0 && (

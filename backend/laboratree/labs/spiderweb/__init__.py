@@ -136,6 +136,9 @@ async def run_mission(
                                 "derived_schema": {} if spec.target_schema else schema}
     seed_domains = {_domain(u) for u in seeds}
     extract_enabled = bool(schema) and agentic_llm.is_configured()
+    # only chase open-access PDFs for paper/report-style missions (avoids wasteful DOI lookups
+    # on job boards, product listings, etc.)
+    wants_documents = _wants_documents(spec.objective, schema)
 
     engine = browser or get_browser()
     started = time.monotonic()
@@ -183,7 +186,18 @@ async def run_mission(
                         record_hashes.add(digest)
                         records.append(record)
 
-            snapshot_key = await _snapshot(session, agent_run, url, text, record, schema)
+            raw = await _page_bytes(engine)
+            snapshot_key = await _snapshot(session, agent_run, url, text, record, schema,
+                                           raw=raw)
+            if record is not None:
+                # the user asked for papers — hand back the DOCUMENT, not just fields:
+                # a PDF page archives itself; an HTML match chases its open-access PDF
+                if snapshot_key.endswith(".pdf"):
+                    record["archived_pdf"] = snapshot_key
+                elif wants_documents:
+                    pdf_key = await _archive_oa_pdf(session, agent_run, record, url)
+                    if pdf_key:
+                        record["archived_pdf"] = pdf_key
 
             queued = 0
             if depth < spec.max_depth:
@@ -215,17 +229,36 @@ async def _persist(session, agent_run, frontier, queue, visited, records, record
     await session.commit()
 
 
-async def _snapshot(session, agent_run, url, text, record, schema) -> str:
-    """Archive the page + catalogue it; returns the blob key ("" on failure)."""
-    key = f"spiderweb/{agent_run.id}/{hashlib.sha256(url.encode()).hexdigest()[:16]}.txt"
+async def _page_bytes(engine) -> bytes | None:
+    """Original document bytes when the engine can supply them (fake browsers may not)."""
+    getter = getattr(engine, "page_bytes", None)
+    if getter is None:
+        return None
     try:
-        get_blob_store().put(key, text.encode())
+        return await getter()
+    except Exception:
+        return None
+
+
+async def _snapshot(session, agent_run, url, text, record, schema, *,
+                    raw: bytes | None = None) -> str:
+    """Archive the page + catalogue it; returns the blob key ("" on failure).
+
+    PDFs archive as the ORIGINAL document (the user wants the paper, not extracted text);
+    everything else archives as readable text.
+    """
+    is_pdf = raw is not None and raw.lstrip()[:5].startswith(b"%PDF")
+    ext, body, kind = (".pdf", raw, "pdf") if is_pdf else (".txt", text.encode(), "page")
+    key = f"spiderweb/{agent_run.id}/{hashlib.sha256(url.encode()).hexdigest()[:16]}{ext}"
+    try:
+        get_blob_store().put(key, body)
         description = (
             f"Matched item: {json.dumps({k: record.get(k) for k in list(schema)[:4]}, default=str)[:200]}"
-            if record else f"Page snapshot: {url[:150]}"
+            if record else
+            (f"PDF document: {url[:150]}" if is_pdf else f"Page snapshot: {url[:150]}")
         )
         await note_blob(session, org_id=agent_run.org_id, project_id=agent_run.project_id,
-                        key=key, kind="page", size=len(text), description=description,
+                        key=key, kind=kind, size=len(body), description=description,
                         source=url)
     except Exception as exc:  # snapshots are best-effort
         log.debug("snapshot failed for %s: %s", url, exc)
@@ -233,10 +266,64 @@ async def _snapshot(session, agent_run, url, text, record, schema) -> str:
     return key
 
 
+_DOCUMENT_MARKERS = ("paper", "papers", "study", "studies", "research", "journal",
+                     "article", "publication", "preprint", "thesis", "report", "working paper",
+                     "literature", "doi", "arxiv", "pdf")
+_DOCUMENT_FIELDS = ("url", "doi", "link", "pdf", "abstract", "title", "authors", "author",
+                    "citation", "journal", "year")
+
+
+def _wants_documents(objective: str, schema: dict[str, str]) -> bool:
+    """Does this mission want the source DOCUMENT (not just extracted fields)?"""
+    low = objective.lower()
+    if any(marker in low for marker in _DOCUMENT_MARKERS):
+        return True
+    keys = {k.lower() for k in schema}
+    # a schema naming url/doi + a scholarly field is a paper hunt
+    return bool(keys & {"url", "doi", "link", "pdf"}) and bool(
+        keys & {"abstract", "authors", "author", "citation", "journal", "year", "title"})
+
+
+def _record_link(record: dict[str, Any], fallback_url: str) -> str:
+    """A DOI/URL the record itself carries (the paper's own link) beats the landing page."""
+    for field in ("doi", "url", "link", "pdf"):
+        value = record.get(field)
+        if isinstance(value, str) and value.startswith(("http://", "https://", "10.")):
+            return value
+    return fallback_url
+
+
+async def _archive_oa_pdf(session, agent_run, record: dict[str, Any], url: str) -> str:
+    """Resolve a matched HTML page to its open-access PDF and archive the original."""
+    from ...core import net as net_mod
+    from ...core import search as search_belt
+
+    target = _record_link(record, url)
+    try:
+        pdf_url = await asyncio.to_thread(search_belt.open_access_pdf, target)
+        if not pdf_url:
+            return ""
+        body = await asyncio.to_thread(net_mod.safe_fetch, pdf_url)
+        if not body or not body.lstrip()[:5].startswith(b"%PDF"):
+            return ""
+        key = (f"spiderweb/{agent_run.id}/"
+               f"{hashlib.sha256(pdf_url.encode()).hexdigest()[:16]}.pdf")
+        get_blob_store().put(key, body)
+        await note_blob(session, org_id=agent_run.org_id, project_id=agent_run.project_id,
+                        key=key, kind="pdf", size=len(body),
+                        description=f"Open-access PDF for {url[:140]}", source=pdf_url)
+        return key
+    except Exception as exc:  # a missing OA copy must never fail the mission
+        log.debug("OA pdf resolution failed for %s: %s", url, exc)
+        return ""
+
+
 async def _finish(session, agent_run, spec, seeds, records, visited, extract_enabled) -> None:
     from ...agents.run_executor import execute_component
 
+    pdfs = sum(1 for r in records if r.get("archived_pdf"))
     summary = (f"mission complete: {len(records)} item(s) from {len(visited)} page(s)"
+               + (f", {pdfs} PDF document(s) archived" if pdfs else "")
                if extract_enabled else
                f"snapshot crawl complete: {len(visited)} page(s) archived"
                + ("" if agentic_llm.is_configured() or not spec.target_schema
