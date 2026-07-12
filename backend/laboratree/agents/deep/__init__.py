@@ -241,11 +241,13 @@ async def _run_tasks(
         sub_tools = ({n: tools[n] for n in task.tools if n in tools}
                      or specialist_tools(task.agent_type, tools))
         context_note = "\n\n".join(p for p in (base_note, memory.digest()) if p)
+        # combine the caller's persona (e.g. Research Director) WITH the specialist's operating
+        # instructions (e.g. 'read the source before concluding') — never drop the specialist
+        combined_persona = "\n\n".join(
+            p for p in (persona, specialist_persona(task.agent_type)) if p)
         result = await react_loop(
             ctx, objective=task.objective, tools=sub_tools,
-            system=prompts.react_system(
-                toolbelt_prompt(sub_tools),
-                persona=persona or specialist_persona(task.agent_type)),
+            system=prompts.react_system(toolbelt_prompt(sub_tools), persona=combined_persona),
             max_steps=max_steps, runner=runner, on_step=on_step,
             context_note=context_note,
         )
