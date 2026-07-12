@@ -1,0 +1,19 @@
+[project]
+name = "laboratree-search-mcp"
+version = "0.1.0"
+description = "WebSearch + Retrieval Intelligence as an MCP server — multi-provider discovery, fetch/read, and DB-free hybrid retrieval, consumable by any MCP client."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mcp>=1.2.0",
+    "laboratree-api",   # reuses the strong multi-provider search + SSRF-guarded fetch belt
+]
+
+[project.scripts]
+laboratree-search-mcp = "laboratree_search_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["laboratree_search_mcp"]

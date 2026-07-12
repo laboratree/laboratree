@@ -2,10 +2,11 @@
 # Members are the Python projects in the monorepo.
 
 [tool.uv.workspace]
-members = ["backend", "packages/plugin-sdk"]
+members = ["backend", "packages/plugin-sdk", "mcp-servers/search-mcp", "mcp-servers/ocr-mcp"]
 
 [tool.uv.sources]
 laboratree-plugin-sdk = { workspace = true }
+laboratree-api = { workspace = true }
 
 # 120 matches how the codebase is actually written (390 of 406 "long" lines were 101–120 cols);
 # the formatter owns wrapping, this is the lint ceiling.
