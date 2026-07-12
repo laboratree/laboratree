@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -90,6 +91,22 @@ def _observation_text(value: Any) -> str:
     return text
 
 
+_URL_IN_TEXT = re.compile(r"https?://[^\s)\"'>]+")
+MAX_SEEN_URLS = 200
+
+
+def _stash_urls(ctx: FlowContext, text: str) -> None:
+    """Accumulate raw source URLs from a tool observation into run state, before compaction
+    can summarize them away — deterministic post-steps (e.g. PDF archiving) act on these."""
+    seen: list[str] = ctx.state.setdefault("seen_urls", [])
+    for raw in _URL_IN_TEXT.findall(text):
+        if len(seen) >= MAX_SEEN_URLS:
+            break
+        url = raw.rstrip(".,;)")
+        if url not in seen:
+            seen.append(url)
+
+
 def _compact(ctx: FlowContext, text: str) -> str:
     """Summarize an oversized observation once (cheap model); archive stays with the caller."""
     if len(text) <= MAX_OBSERVATION_CHARS:
@@ -141,11 +158,13 @@ async def react_loop(
         tool_name = str(decision.get("tool", ""))
         args = dict(decision.get("args") or {})
         observation = await runner.call(tool_name, args)
+        obs_text = _observation_text(observation)
+        _stash_urls(ctx, obs_text)   # capture raw source URLs BEFORE compaction (post-steps use them)
         await _emit({
             "kind": "tool", "step": step_no,
             "thought": str(decision.get("thought", ""))[:400],
             "tool": tool_name, "args": _observation_text(args)[:400],
-            "observation": _compact(ctx, _observation_text(observation)),
+            "observation": _compact(ctx, obs_text),
         })
     else:
         summary = f"stopped at the {max_steps}-step budget without finishing"

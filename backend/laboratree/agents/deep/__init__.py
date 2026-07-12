@@ -13,8 +13,10 @@ raw scratchpads; a live token budget stops overruns honestly. No LLM key → a r
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 from ...core.config import settings
@@ -207,6 +209,9 @@ async def run_deep_agent(
     trace_key = _archive(bucket_prefix, objective, plan, task_results, summary,
                          findings, notes, goal=goal, memory=memory, reflection=reflection,
                          recalled=len(recalled), refined=refined)
+    # deterministic post-step: if the run cited papers, resolve + archive their open-access PDFs
+    # so the actual documents land in the Artifact Store (not just abstracts in the reasoning)
+    archived_pdfs = await _archive_cited_pdfs(ctx, bucket_prefix, task_results, on_step=_emit)
 
     return PhaseResult(
         stage_id=stage_id, status="succeeded",
@@ -218,6 +223,7 @@ async def run_deep_agent(
                    "critic_dropped": len(notes), "trace_key": trace_key,
                    "findings": findings[:10], "goal_kind": goal.kind,
                    "recalled": len(recalled), "refined": refined,
+                   "archived_pdfs": archived_pdfs,
                    "tool_runs": ctx.state.get("deep_run_ids", [])},
     )
 
@@ -304,6 +310,85 @@ async def _record_safe(ctx, goal, plan: AgentPlan, task_notes, findings, pre_cou
             await ctx.session.rollback()
         except Exception:
             log.debug("rollback after experience-record failure also failed")
+
+
+_SCHOLARLY_HOSTS = ("doi.org/", "arxiv.org/", "openalex.org", "semanticscholar.org",
+                    "ncbi.nlm.nih.gov", "/pmc/", "biorxiv.org", "ssrn.com")
+_URL_RE = re.compile(r"https?://[^\s)\"'>]+")
+_DOI_RE = re.compile(r"\b10\.\d{4,9}/[^\s)\"'>]+")
+MAX_ARCHIVED_PDFS = 6
+
+
+def _cited_sources(ctx, task_results: list[ReactResult]) -> list[str]:
+    """Scholarly URLs/DOIs the run actually retrieved. Prefers the RAW urls captured at tool
+    time (``ctx.state['seen_urls']`` — complete, pre-compaction), then scans the scratchpad."""
+    raw_urls = list(ctx.state.get("seen_urls") or [])
+    scratch = " ".join(str(s.get("observation", ""))
+                       for r in task_results for s in r.scratchpad if s.get("kind") == "tool")
+    found: list[str] = []
+    seen: set[str] = set()
+    for raw in [*raw_urls, *_URL_RE.findall(scratch)]:
+        url = raw.rstrip(".,;)'\"")
+        if any(h in url.lower() for h in _SCHOLARLY_HOSTS) and url not in seen:
+            seen.add(url)
+            found.append(url)
+    for doi in _DOI_RE.findall(scratch):
+        key = f"https://doi.org/{doi.rstrip('.,;)')}"
+        if key not in seen:
+            seen.add(key)
+            found.append(key)
+    return found[:15]
+
+
+async def _archive_cited_pdfs(ctx, bucket_prefix: str, task_results: list[ReactResult],
+                              *, on_step) -> list[dict[str, str]]:
+    """Resolve each cited paper to its open-access PDF and archive the original document.
+
+    Deterministic — runs regardless of whether the LLM chose to open PDFs mid-reasoning — so the
+    actual documents reliably land in the Artifact Store. Best-effort and capped; a missing OA
+    copy never fails the run."""
+    import hashlib
+
+    from ...core import net as net_mod
+    from ...core import search as search_belt
+    from ...core.storage import get_blob_store
+    from ..tools.context_tools import note_blob
+
+    sources = _cited_sources(ctx, task_results)
+    if not sources:
+        return []
+    archived: list[dict[str, str]] = []
+    seen_pdf: set[str] = set()
+    for source in sources:
+        if len(archived) >= MAX_ARCHIVED_PDFS:
+            break
+        try:
+            pdf_url = await asyncio.wait_for(
+                asyncio.to_thread(search_belt.open_access_pdf, source), timeout=20)
+            if not pdf_url or pdf_url in seen_pdf:
+                continue
+            body = await asyncio.wait_for(
+                asyncio.to_thread(net_mod.safe_fetch, pdf_url), timeout=25)
+            if not body or not body.lstrip()[:5].startswith(b"%PDF"):
+                continue
+            seen_pdf.add(pdf_url)
+            key = f"{bucket_prefix}{hashlib.sha256(pdf_url.encode()).hexdigest()[:16]}.pdf"
+            get_blob_store().put(key, body)
+            await note_blob(ctx.session, org_id=ctx.org_id, project_id=ctx.project_id,
+                            key=key, kind="pdf", size=len(body),
+                            description=f"Open-access PDF cited by the research run ({source[:120]})",
+                            source=pdf_url)
+            archived.append({"key": key, "source": source})
+        except Exception as exc:  # each paper is best-effort; never fail the run
+            log.debug("cited-PDF archive failed for %s: %s", source, exc)
+    if archived:
+        try:
+            await on_step({"kind": "note",
+                           "note": f"archived {len(archived)} open-access PDF(s) to the store",
+                           "pdfs": [a["key"] for a in archived]})
+        except Exception:
+            log.debug("archived-pdf step emit failed")
+    return archived
 
 
 def _converge(objective: str, planned: bool,

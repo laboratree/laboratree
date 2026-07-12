@@ -68,6 +68,14 @@ function StepLine({ step }: { step: AgentStep }) {
       </div>
     );
   }
+  if (step.kind === "note") {
+    return (
+      <div className="mt-1 rounded-lg bg-[#EAF5FF] p-2 text-[11px] text-[#1D4ED8]">
+        📎 {step.note}
+        {step.pdfs?.length ? ` — ${step.pdfs.length} PDF(s) in the Artifact Store` : ""}
+      </div>
+    );
+  }
   if (step.kind === "critic") {
     return (
       <div className="mt-1 text-[11px] text-amber-700">

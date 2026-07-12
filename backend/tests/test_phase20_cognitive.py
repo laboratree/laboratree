@@ -260,6 +260,47 @@ async def test_refinement_runs_exactly_once_when_critic_guts_findings(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_archive_cited_pdfs_saves_open_access_documents(monkeypatch):
+    import laboratree.core.net as net_mod
+    import laboratree.core.search as search_mod
+    from laboratree.agents.deep import _archive_cited_pdfs
+    from laboratree.agents.deep.react import ReactResult
+    from laboratree.core.db.postgres import sessionmaker
+    from laboratree.core.storage import get_blob_store
+
+    # a cited DOI resolves to an OA PDF; a non-scholarly link does not
+    monkeypatch.setattr(search_mod, "open_access_pdf",
+                        lambda u: "https://oa.example.org/paper.pdf" if "doi.org" in u else None)
+    monkeypatch.setattr(net_mod, "safe_fetch", lambda u, **kw: b"%PDF-1.5 fake-paper-bytes")
+
+    steps: list[dict] = []
+
+    async def _on(s: dict) -> None:
+        steps.append(s)
+
+    async with sessionmaker()() as session:
+        ctx = await _seed_context(session)
+        task_results = [ReactResult("s", [], [
+            {"kind": "tool", "observation":
+             "top result https://doi.org/10.1257/aer.20101008 and a blog https://x.com/post"}])]
+        bucket = f"flows/{ctx.flow_run.id}/lab-ideation/"
+        archived = await _archive_cited_pdfs(ctx, bucket, task_results, on_step=_on)
+
+        assert len(archived) == 1                                  # only the scholarly one
+        key = archived[0]["key"]
+        assert key.startswith(bucket) and key.endswith(".pdf")
+        assert get_blob_store().get(key).startswith(b"%PDF")       # original document archived
+        # catalogued so the Artifact Store lists it under the run
+        from laboratree.projects.models import BlobNote
+        from sqlalchemy import select
+        await session.flush()
+        note = (await session.execute(
+            select(BlobNote).where(BlobNote.key == key))).scalar_one_or_none()
+        assert note is not None and note.kind == "pdf"
+        assert any(s.get("kind") == "note" and "archived 1" in s.get("note", "") for s in steps)
+
+
+@pytest.mark.asyncio
 async def test_token_budget_stops_run_honestly(monkeypatch):
     from laboratree.agents.deep import run_deep_agent
     from laboratree.core.config import settings

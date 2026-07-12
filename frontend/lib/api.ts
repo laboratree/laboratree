@@ -1412,6 +1412,7 @@ export type AgentStep = {
   snapshot_key?: string;
   seeds?: string[];
   fields?: Record<string, string>;
+  pdfs?: string[];
 };
 export type AgentRunView = {
   id: string;
