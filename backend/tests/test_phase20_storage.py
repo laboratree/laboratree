@@ -86,8 +86,11 @@ def test_artifact_store_groups_by_lab_and_is_org_scoped(monkeypatch):
         from laboratree.core.db.postgres import sessionmaker
         from laboratree.tenancy.models import Organization  # noqa: F401 (model import order)
 
+        chat_run_id = uuid.uuid4()
+
         async def _seed():
             async with sessionmaker()() as session:
+                from laboratree.projects.models import Run, RunStatus
                 from sqlalchemy import text as sql_text
                 org = (await session.execute(sql_text(
                     "SELECT org_id FROM projects WHERE id = :p"),
@@ -100,19 +103,38 @@ def test_artifact_store_groups_by_lab_and_is_org_scoped(monkeypatch):
                                 key=f"flows/{uuid.uuid4()}/lab-insight/trace.json",
                                 kind="trace", size=300, description="Insight agent trace",
                                 source="")
+                # a chatbot run: anchor Run(kind="agent") + its trace under flows/{run_id}/lab-field
+                session.add(Run(id=chat_run_id, org_id=org, project_id=uuid.UUID(project_id),
+                                kind="agent", lab="field", component_id="agent.field",
+                                status=RunStatus.SUCCEEDED, params={"task": "why do students drop out?"}))
+                await session.flush()
+                await note_blob(session, org_id=org, project_id=uuid.UUID(project_id),
+                                key=f"flows/{chat_run_id}/lab-field/trace.json", kind="trace",
+                                size=200, description="Field agent chat trace", source="")
                 await session.commit()
         asyncio.run(_seed())
 
         store = client.get(f"/api/projects/{project_id}/artifact-store",
                            headers=headers).json()
-        labs = {e["lab"] for e in store}
+        groups = store["groups"]
+        labs = {g["lab"] for g in groups}
         assert {"spiderweb", "insight"} <= labs
-        assert all(e["description"] for e in store if e["origin"] == "blob")
+        # artifacts are grouped under their producing task, not a flat list
+        assert all(g["count"] == len(g["artifacts"]) for g in groups)
+        assert all(a["description"] for g in groups for a in g["artifacts"]
+                   if a["origin"] == "blob")
+        # the SpiderWeb blob groups as a 'mission', the flow trace as a 'flow' (not a mission)
+        kinds = {g["lab"]: g["task_kind"] for g in groups}
+        assert kinds["spiderweb"] == "mission" and kinds["insight"] == "flow"
+        # a chatbot run is a 'chat' task labelled by its question — NOT a standalone mission
+        chat = next(g for g in groups if g["task_id"] == str(chat_run_id))
+        assert chat["task_kind"] == "chat" and chat["lab"] == "field"
+        assert chat["label"] == "why do students drop out?"
 
         # lab filter narrows
         only = client.get(f"/api/projects/{project_id}/artifact-store?lab=spiderweb",
                           headers=headers).json()
-        assert only and all(e["lab"] == "spiderweb" for e in only)
+        assert only["groups"] and all(g["lab"] == "spiderweb" for g in only["groups"])
 
         # another org: project 404 (no cross-org browsing)
         other = client.post("/api/auth/register",

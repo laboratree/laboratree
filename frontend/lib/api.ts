@@ -1471,13 +1471,28 @@ export type StoreArtifact = {
   size: number;
   description: string;
   source: string;
-  lab: string;
   created_at: string;
   artifact_id?: string;
+  run_id?: string;
+};
+export type StoreTaskGroup = {
+  task_id: string;
+  task_kind: "mission" | "chat" | "flow" | "run" | "media" | "other";
+  lab: string;
+  label: string;
+  created_at: string;
+  count: number;
+  artifacts: StoreArtifact[];
+};
+export type ArtifactStoreResponse = {
+  groups: StoreTaskGroup[];
+  labs: string[];
+  total_tasks: number;
 };
 export const artifactStoreApi = {
   list: (projectId: string, lab?: string) =>
-    apiGet<StoreArtifact[]>(`/api/projects/${projectId}/artifact-store${lab ? `?lab=${lab}` : ""}`),
+    apiGet<ArtifactStoreResponse>(
+      `/api/projects/${projectId}/artifact-store${lab ? `?lab=${lab}` : ""}`),
   openRunArtifact: async (artifactId: string): Promise<void> => {
     const res = await fetch(`${API_URL}/api/artifacts/${artifactId}/download`,
       { headers: authHeaders() });
