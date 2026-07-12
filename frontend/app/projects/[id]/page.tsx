@@ -22,7 +22,7 @@ const dyn = (loader: () => Promise<{ default: React.ComponentType<{ projectId: s
 const SignalLab = dyn(() => import("@/components/SignalLab"));
 const PapersLab = dyn(() => import("@/components/PapersLab"));
 const InsightLab = dyn(() => import("@/components/InsightLab"));
-const IdeationLab = dyn(() => import("@/components/IdeationLab"));
+const ResearchOS = dyn(() => import("@/components/ResearchOS"));
 const CollectionLab = dyn(() => import("@/components/CollectionLab"));
 const FieldLab = dyn(() => import("@/components/FieldLab"));
 const PanelLab = dyn(() => import("@/components/PanelLab"));
@@ -165,7 +165,7 @@ export default function ProjectWorkspace() {
       </div>
 
       <div className="mt-6">
-        {tab === "ideation" && <IdeationLab projectId={projectId} />}
+        {tab === "ideation" && <ResearchOS projectId={projectId} />}
         {tab === "collection" && <CollectionLab projectId={projectId} />}
         {tab === "field" && <FieldLab projectId={projectId} />}
         {tab === "panel" && <PanelLab projectId={projectId} />}

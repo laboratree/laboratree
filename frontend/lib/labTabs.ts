@@ -1,7 +1,7 @@
 // Single source of truth for the project-workspace tabs. The workspace page renders them;
 // pipeline stages deep-link to them via FlowStage.labTab.
 export const LAB_TABS = [
-  { key: "ideation", label: "Ideation Lab", short: "Ideation" },
+  { key: "ideation", label: "Research OS", short: "Research OS" },
   { key: "collection", label: "Collection Lab", short: "Collection" },
   { key: "field", label: "Field Lab", short: "Field" },
   { key: "panel", label: "Panel", short: "Panel" },

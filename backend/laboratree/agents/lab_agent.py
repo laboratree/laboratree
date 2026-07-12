@@ -38,6 +38,10 @@ GROUNDING_DEFAULT = ("knowledge_search", "web_search", "research_search", "arxiv
                      "reddit_search", "fetch_page", "crawl", "index_text", "storage_catalog",
                      "read_blob", "component_spec", "run_component", "dataset_overview",
                      "query_dataset_sql", "query_cypher")
+# the Research Director wants the full discovery + retrieval belt, incl. open-access PDF pull
+RESEARCH_GROUNDING = ("knowledge_search", "research_search", "web_search", "arxiv_search",
+                      "reddit_search", "open_access_pdf", "fetch_page", "crawl", "index_text",
+                      "storage_catalog", "read_blob", "component_spec", "dataset_overview")
 
 
 @dataclass(frozen=True)
@@ -56,13 +60,13 @@ def _llm_action(name: str, description: str, params_hint: str, fn, **inject) -> 
 
 def _ideation_actions() -> dict[str, AgentTool]:
     from ..core.search import research_search
-    from ..labs.ideation.coscientist import co_scientist
+    from ..labs.ideation.coscientist import run_ideation
     from ..labs.ideation.evidence import gather_evidence
 
     return {
         "co_scientist": _llm_action(
             "co_scientist", "Generate + Elo-rank grounded hypotheses for a research goal.",
-            '{"goal": str}', co_scientist),
+            '{"goal": str}', run_ideation),
         "evidence_hunt": AgentTool(
             "evidence_hunt", "Plan queries → search scholarship → cited evidence brief.",
             '{"hypothesis": str}',
@@ -127,9 +131,17 @@ def _spec(lab: str, title: str, persona: str, *, grounding=GROUNDING_DEFAULT,
 
 
 LAB_AGENTS: dict[str, LabAgentSpec] = {s.lab: s for s in (
-    _spec("ideation", "Ideation Lab agent",
-          "You are the Ideation Lab agent: sharpen goals into grounded, testable hypotheses "
-          "with cited evidence.", builders=(_ideation_actions,)),
+    _spec("ideation", "Research Director",
+          "You are the Research Director of an autonomous Research OS. You DISCOVER, VERIFY, "
+          "reason over, critique and SYNTHESIZE scholarly knowledge — you never merely extract. "
+          "Given a research question: discover literature (research_search/arxiv for papers, "
+          "web/reddit for context), pull the open-access PDF and read it (open_access_pdf → "
+          "fetch_page), extract atomic CLAIMS with their evidence, seek corroborating AND "
+          "contradictory findings, and synthesize an evidence-backed answer. Every claim MUST "
+          "cite an observation id — never fabricate a figure, source, or result; when the "
+          "evidence is thin or conflicting, say so. Use co_scientist to turn a question into "
+          "testable hypotheses and evidence_hunt for a cited brief.",
+          grounding=RESEARCH_GROUNDING, builders=(_ideation_actions,)),
     _spec("papers", "Paper Lab agent",
           "You are the Paper Lab agent: understand, summarize, and interrogate research papers; "
           "always cite chunks you retrieved.", builders=(_paper_actions,)),

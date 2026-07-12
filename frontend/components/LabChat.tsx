@@ -17,6 +17,8 @@ export type LabChatProps = {
   lab: string;
   title?: string;
   onFlowOps?: (ops: FlowOp[]) => void;
+  startOpen?: boolean;          // render expanded (e.g. as a primary console, not a widget)
+  intro?: string;               // override the empty-state hint
 };
 
 const POLL_MS = 2000;
@@ -139,8 +141,8 @@ function RunView({ projectId, agentRunId }: { projectId: string; agentRunId: str
   );
 }
 
-export default function LabChat({ projectId, lab, title, onFlowOps }: LabChatProps) {
-  const [open, setOpen] = useState(false);
+export default function LabChat({ projectId, lab, title, onFlowOps, startOpen, intro }: LabChatProps) {
+  const [open, setOpen] = useState(startOpen ?? false);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -201,8 +203,7 @@ export default function LabChat({ projectId, lab, title, onFlowOps }: LabChatPro
       <div className="max-h-96 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="text-xs text-ink/40">
-            Ask anything, or delegate work — the agent grounds its answers in your project&apos;s
-            data and Evidence-locks what it produces.
+            {intro ?? "Ask anything, or delegate work — the agent grounds its answers in your project's data and Evidence-locks what it produces."}
           </p>
         )}
         {messages.map((m, i) => (
